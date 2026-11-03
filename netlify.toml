@@ -1,0 +1,7 @@
+# Utilisé seulement si le déploiement se fait via Netlify
+[build]
+  command = "npm test && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
