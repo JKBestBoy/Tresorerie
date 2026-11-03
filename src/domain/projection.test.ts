@@ -109,6 +109,34 @@ describe('projection', () => {
     expect(rows[1].plannedMarkers).toEqual(['PC (1/3)'])
   })
 
+  it('accepte des mensualités de montants différents', () => {
+    const rows = project(
+      plan({
+        plannedExpenses: [
+          { id: 'p', label: 'Voiture', totalAmount: 0, month: '2026-12', installments: 3, customAmounts: [50000, 20000, 10000] },
+        ],
+      }),
+      [],
+      NOW,
+    )
+    expect(rows.slice(0, 5).map((r) => r.outflows)).toEqual([0, 50000, 20000, 10000, 0])
+    expect(rows[2].plannedMarkers).toEqual(['Voiture (2/3)'])
+  })
+
+  it('calcule le reste du mois (entrées - sorties)', () => {
+    const rows = project(
+      plan({
+        incomePeriods: [{ id: 'a', label: 'Salaire', monthlyAmount: 150000, startMonth: null, endMonth: null }],
+        fixedExpenses: [{ id: 'f', label: 'Loyer', monthlyAmount: 80000, startMonth: null, endMonth: null }],
+        plannedExpenses: [{ id: 'p', label: 'PC', totalAmount: 100000, month: '2026-12', installments: 1 }],
+      }),
+      [],
+      NOW,
+    )
+    expect(rows[0].net).toBe(70000)
+    expect(rows[1].net).toBe(-30000)
+  })
+
   it('une dépense commencée avant le départ ne compte que ses mensualités restantes', () => {
     const rows = project(
       plan({ plannedExpenses: [{ id: 'p', label: 'Canapé', totalAmount: 30000, month: '2026-09', installments: 4 }] }),

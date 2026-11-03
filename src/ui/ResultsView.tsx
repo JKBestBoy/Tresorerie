@@ -52,21 +52,25 @@ export function ResultsView({ plan, onEdit }: { plan: Plan; onEdit: () => void }
         </div>
       </section>
 
+      <p className="text-xs text-slate-500">
+        <strong>Reste</strong> = ce qu’il reste des entrées du mois une fois toutes les dépenses payées (négatif = le mois coûte plus qu’il ne rapporte).
+      </p>
       <section className="overflow-x-auto rounded-xl bg-white shadow-sm">
-        <table className="w-full text-sm tabular-nums">
+        <table className="w-full whitespace-nowrap text-[11px] tabular-nums min-[375px]:text-xs sm:text-sm">
           <thead className="bg-slate-100 text-slate-600">
             <tr>
-              <th className="p-2 text-left">Mois</th>
-              <th className="p-2 text-right">Début</th>
-              <th className="p-2 text-right">Entrées</th>
-              <th className="p-2 text-right">Sorties</th>
-              <th className="p-2 text-right">Fin</th>
+              <th className="px-1 py-2 text-left">Mois</th>
+              <th className="hidden px-1 py-2 text-right sm:table-cell">Début</th>
+              <th className="px-1 py-2 text-right">Entrées</th>
+              <th className="px-1 py-2 text-right">Sorties</th>
+              <th className="px-1 py-2 text-right">Reste</th>
+              <th className="px-1 py-2 text-right">Fin</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.month} className="border-t border-slate-100 align-top">
-                <td className="p-2">
+                <td className="px-1 py-2">
                   <div className="font-medium">{monthShortLabel(r.month)}</div>
                   {r.details.length > 0 && (
                     <details className="text-xs text-slate-500">
@@ -82,10 +86,14 @@ export function ResultsView({ plan, onEdit }: { plan: Plan; onEdit: () => void }
                     </details>
                   )}
                 </td>
-                <td className="p-2 text-right">{formatEuros(r.opening, { round: true })}</td>
-                <td className="p-2 text-right text-emerald-700">+{formatEuros(r.incomes, { round: true })}</td>
-                <td className="p-2 text-right text-red-700">−{formatEuros(r.outflows, { round: true })}</td>
-                <td className={`p-2 text-right font-semibold ${r.closing < plan.safetyCushion ? 'text-red-700' : ''}`}>
+                <td className="hidden px-1 py-2 text-right sm:table-cell">{formatEuros(r.opening, { round: true })}</td>
+                <td className="px-1 py-2 text-right text-emerald-700">{r.incomes > 0 ? '+' : ''}{formatEuros(r.incomes, { round: true })}</td>
+                <td className="px-1 py-2 text-right text-red-700">{r.outflows > 0 ? '−' : ''}{formatEuros(r.outflows, { round: true })}</td>
+                <td className={`px-1 py-2 text-right font-medium ${r.net < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                  {r.net > 0 ? '+' : r.net < 0 ? '−' : ''}
+                  {formatEuros(Math.abs(r.net), { round: true })}
+                </td>
+                <td className={`px-1 py-2 text-right font-bold ${r.closing < plan.safetyCushion ? 'text-red-700' : ''}`}>
                   {formatEuros(r.closing, { round: true })}
                 </td>
               </tr>

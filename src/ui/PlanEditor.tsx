@@ -8,11 +8,10 @@ import {
   touchesStartMonth,
 } from '../domain/defaults'
 import { formatEuros } from '../domain/money'
-import { monthLabel } from '../domain/month'
-import { splitInstallments, startMonthOf } from '../domain/projection'
+import { addMonths, monthLabel, monthOf } from '../domain/month'
+import { installmentAmounts, splitInstallments, startMonthOf } from '../domain/projection'
 import { samplePlan } from '../domain/sample'
-import { monthOf } from '../domain/month'
-import type { Plan } from '../domain/types'
+import type { Cents, Plan, PlannedExpense } from '../domain/types'
 import { Checkbox, Field, MoneyInput, MonthInput, TextInput, inputClass } from './inputs'
 
 type ListKey = 'incomePeriods' | 'oneOffIncomes' | 'fixedExpenses' | 'plannedExpenses'
@@ -247,48 +246,16 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
         subtitle="Voiture, vacances, ordinateur… payées comptant ou en plusieurs fois"
         total={plan.plannedExpenses.length ? `${plan.plannedExpenses.length} ligne(s)` : undefined}
       >
-        {plan.plannedExpenses.map((it) => {
-          const parts = splitInstallments(it.totalAmount, it.installments)
-          return (
-            <ItemCard key={it.id} onDelete={() => remove('plannedExpenses', it.id)}>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Nom">
-                  <TextInput value={it.label} placeholder="Vacances" onChange={(label) => update('plannedExpenses', it.id, { label })} />
-                </Field>
-                <Field label="Montant total">
-                  <MoneyInput value={it.totalAmount} onChange={(totalAmount) => update('plannedExpenses', it.id, { totalAmount })} />
-                </Field>
-                <Field label={it.installments > 1 ? 'Mois du 1er paiement' : 'Mois'}>
-                  <MonthInput value={it.month} onChange={(m) => m && update('plannedExpenses', it.id, { month: m })} />
-                </Field>
-                <Field
-                  label="Paiement"
-                  hint={it.installments > 1 && it.totalAmount > 0 ? `${parts.length} × ${formatEuros(parts[parts.length - 1])}` : undefined}
-                >
-                  <select
-                    className={inputClass}
-                    value={it.installments}
-                    onChange={(e) => update('plannedExpenses', it.id, { installments: Number(e.target.value) })}
-                  >
-                    <option value={1}>Comptant</option>
-                    {[2, 3, 4, 5, 6, 10, 12, 18, 24, 36, 48].map((n) => (
-                      <option key={n} value={n}>
-                        En {n} mensualités
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-              {touchesStartMonth(plan, it) && (
-                <Checkbox
-                  label={it.installments > 1 ? `Mensualité de ${monthLabel(start)} déjà payée` : 'Déjà payé'}
-                  checked={!!it.settledInStartMonth}
-                  onChange={(settledInStartMonth) => update('plannedExpenses', it.id, { settledInStartMonth })}
-                />
-              )}
-            </ItemCard>
-          )
-        })}
+        {plan.plannedExpenses.map((it) => (
+          <PlannedExpenseCard
+            key={it.id}
+            item={it}
+            showSettled={touchesStartMonth(plan, it)}
+            startLabel={monthLabel(start)}
+            onChange={(patch) => update('plannedExpenses', it.id, patch)}
+            onDelete={() => remove('plannedExpenses', it.id)}
+          />
+        ))}
         <AddButton onClick={() => add('plannedExpenses', newPlannedExpense(plan))}>Ajouter une grosse dépense</AddButton>
       </Section>
 
@@ -335,5 +302,98 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
         )}
       </div>
     </div>
+  )
+}
+
+const INSTALLMENT_CHOICES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 18, 24, 36, 48]
+
+function PlannedExpenseCard({
+  item: it,
+  showSettled,
+  startLabel,
+  onChange,
+  onDelete,
+}: {
+  item: PlannedExpense
+  showSettled: boolean
+  startLabel: string
+  onChange: (patch: Partial<PlannedExpense>) => void
+  onDelete: () => void
+}) {
+  const custom = !!it.customAmounts
+  const parts = installmentAmounts(it)
+  const sum = (a: Cents[]) => a.reduce((s, x) => s + x, 0)
+
+  function setInstallments(n: number) {
+    if (custom && n > 1) {
+      const next = Array.from({ length: n }, (_, i) => it.customAmounts![i] ?? 0)
+      onChange({ installments: n, customAmounts: next, totalAmount: sum(next) })
+    } else {
+      onChange({ installments: n, customAmounts: undefined })
+    }
+  }
+  function setCustom(on: boolean) {
+    if (on) onChange({ customAmounts: splitInstallments(it.totalAmount, it.installments) })
+    else onChange({ customAmounts: undefined, totalAmount: sum(parts) })
+  }
+  function setPart(i: number, c: Cents) {
+    const next = [...parts]
+    next[i] = c
+    onChange({ customAmounts: next, totalAmount: sum(next) })
+  }
+
+  return (
+    <ItemCard onDelete={onDelete}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Nom">
+          <TextInput value={it.label} placeholder="Vacances" onChange={(label) => onChange({ label })} />
+        </Field>
+        <Field label="Montant total" hint={custom ? 'Calculé à partir des mensualités ci-dessous' : undefined}>
+          {custom ? (
+            <div className={`${inputClass} bg-slate-100 text-slate-700`}>{formatEuros(sum(parts))}</div>
+          ) : (
+            <MoneyInput value={it.totalAmount} onChange={(totalAmount) => onChange({ totalAmount })} />
+          )}
+        </Field>
+        <Field label={it.installments > 1 ? 'Mois du 1er paiement' : 'Mois'}>
+          <MonthInput value={it.month} onChange={(m) => m && onChange({ month: m })} />
+        </Field>
+        <Field
+          label="Paiement"
+          hint={!custom && it.installments > 1 && it.totalAmount > 0 ? `${parts.length} × ${formatEuros(parts[parts.length - 1])}` : undefined}
+        >
+          <select className={inputClass} value={it.installments} onChange={(e) => setInstallments(Number(e.target.value))}>
+            <option value={1}>Comptant</option>
+            {INSTALLMENT_CHOICES.map((n) => (
+              <option key={n} value={n}>
+                En {n} mensualités
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      {it.installments > 1 && (
+        <Checkbox label="Les mensualités n’ont pas toutes le même montant" checked={custom} onChange={setCustom} />
+      )}
+      {custom && (
+        <div className="space-y-2 rounded-lg bg-white p-3 ring-1 ring-slate-200">
+          {parts.map((c, i) => (
+            <div key={i} className="grid grid-cols-[1fr_9rem] items-center gap-3">
+              <span className="text-sm text-slate-600">
+                {i + 1}. {monthLabel(addMonths(it.month, i))}
+              </span>
+              <MoneyInput value={c} onChange={(v) => setPart(i, v)} />
+            </div>
+          ))}
+        </div>
+      )}
+      {showSettled && (
+        <Checkbox
+          label={it.installments > 1 ? `Mensualité de ${startLabel} déjà payée` : 'Déjà payé'}
+          checked={!!it.settledInStartMonth}
+          onChange={(settledInStartMonth) => onChange({ settledInStartMonth })}
+        />
+      )}
+    </ItemCard>
   )
 }

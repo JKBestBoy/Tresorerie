@@ -45,6 +45,11 @@ export interface PlannedExpense extends Settleable {
   month: MonthKey
   /** 1 = comptant, N = payé en N mensualités */
   installments: number
+  /**
+   * Montant exact de chaque mensualité, si elles ne sont pas égales.
+   * Absent = découpage automatique de totalAmount en parts égales.
+   */
+  customAmounts?: Cents[]
 }
 
 export interface Plan {
@@ -75,6 +80,8 @@ export interface MonthRow {
   opening: Cents
   incomes: Cents
   outflows: Cents // positif
+  /** Reste du mois = entrées - sorties (peut être négatif) */
+  net: Cents
   closing: Cents
   details: FlowLine[]
   /** Libellés des grosses dépenses dont une échéance tombe ce mois-ci */

@@ -1,5 +1,5 @@
 import { addMonths, monthOf } from './month'
-import { splitInstallments, startMonthOf } from './projection'
+import { installmentAmounts, startMonthOf } from './projection'
 import type { FixedExpense, IncomePeriod, OneOffIncome, Plan, PlannedExpense } from './types'
 
 export function newId(): string {
@@ -48,7 +48,7 @@ export function touchesStartMonth(
 ): boolean {
   const s = startMonthOf(plan)
   if ('installments' in item) {
-    const n = splitInstallments(item.totalAmount, item.installments).length
+    const n = installmentAmounts(item).length
     return item.month <= s && s <= addMonths(item.month, n - 1)
   }
   if ('month' in item) return item.month === s

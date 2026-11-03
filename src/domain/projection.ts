@@ -13,6 +13,12 @@ export function splitInstallments(total: Cents, n: number): Cents[] {
   return Array.from({ length: count }, (_, i) => (i === 0 ? base + rest : base))
 }
 
+/** Montants de chaque échéance d'une grosse dépense (personnalisés ou découpage égal). */
+export function installmentAmounts(e: PlannedExpense): Cents[] {
+  if (e.customAmounts && e.customAmounts.length > 0) return e.customAmounts
+  return splitInstallments(e.totalAmount, e.installments)
+}
+
 function isActive(month: MonthKey, start: MonthKey | null, end: MonthKey | null): boolean {
   return (start === null || month >= start) && (end === null || month <= end)
 }
@@ -93,7 +99,7 @@ export function project(
   }
 
   for (const e of [...plan.plannedExpenses, ...extra]) {
-    const parts = splitInstallments(e.totalAmount, e.installments)
+    const parts = installmentAmounts(e)
     parts.forEach((amount, i) => {
       const m = addMonths(e.month, i)
       const label = parts.length > 1 ? `${e.label} (${i + 1}/${parts.length})` : e.label
@@ -131,6 +137,7 @@ export function project(
       opening,
       incomes,
       outflows,
+      net: incomes - outflows,
       closing: balance,
       details,
       plannedMarkers: markers.get(m) ?? [],
