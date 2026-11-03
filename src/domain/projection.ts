@@ -19,6 +19,12 @@ export function installmentAmounts(e: PlannedExpense): Cents[] {
   return splitInstallments(e.totalAmount, e.installments)
 }
 
+/** Échéancier d'une grosse dépense : mois et montant de chaque paiement. */
+export function installmentSchedule(e: PlannedExpense): { month: MonthKey; amount: Cents }[] {
+  const step = Math.max(1, e.intervalMonths ?? 1)
+  return installmentAmounts(e).map((amount, i) => ({ month: addMonths(e.month, i * step), amount }))
+}
+
 function isActive(month: MonthKey, start: MonthKey | null, end: MonthKey | null): boolean {
   return (start === null || month >= start) && (end === null || month <= end)
 }
@@ -99,9 +105,8 @@ export function project(
   }
 
   for (const e of [...plan.plannedExpenses, ...extra]) {
-    const parts = installmentAmounts(e)
-    parts.forEach((amount, i) => {
-      const m = addMonths(e.month, i)
+    const parts = installmentSchedule(e)
+    parts.forEach(({ month: m, amount }, i) => {
       const label = parts.length > 1 ? `${e.label} (${i + 1}/${parts.length})` : e.label
       push(m, {
         sourceId: e.id,

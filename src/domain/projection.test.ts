@@ -123,6 +123,16 @@ describe('projection', () => {
     expect(rows[2].plannedMarkers).toEqual(['Voiture (2/3)'])
   })
 
+  it('paiement trimestriel : une échéance tous les 3 mois', () => {
+    const rows = project(
+      plan({ plannedExpenses: [{ id: 'p', label: 'Impôts', totalAmount: 90000, month: '2026-12', installments: 3, intervalMonths: 3 }] }),
+      [],
+      NOW,
+    )
+    expect(rows.slice(0, 9).map((r) => r.outflows)).toEqual([0, 30000, 0, 0, 30000, 0, 0, 30000, 0])
+    expect(rows[4].plannedMarkers).toEqual(['Impôts (2/3)'])
+  })
+
   it('calcule le reste du mois (entrées - sorties)', () => {
     const rows = project(
       plan({

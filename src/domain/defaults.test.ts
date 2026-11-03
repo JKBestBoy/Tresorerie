@@ -18,5 +18,7 @@ describe('case « déjà passé » visible seulement si le flux tombe dans le mo
     const e = { id: 'x', label: '', totalAmount: 300, installments: 3 }
     expect(touchesStartMonth(plan, { ...e, month: '2026-09' })).toBe(true) // sept, oct, nov
     expect(touchesStartMonth(plan, { ...e, month: '2026-08' })).toBe(false) // août → oct
+    expect(touchesStartMonth(plan, { ...e, month: '2026-08', intervalMonths: 3 })).toBe(true) // août, nov, févr
+    expect(touchesStartMonth(plan, { ...e, month: '2026-09', intervalMonths: 3 })).toBe(false) // sept, déc, mars
   })
 })

@@ -8,8 +8,8 @@ import {
   touchesStartMonth,
 } from '../domain/defaults'
 import { formatEuros } from '../domain/money'
-import { addMonths, monthLabel, monthOf } from '../domain/month'
-import { installmentAmounts, splitInstallments, startMonthOf } from '../domain/projection'
+import { monthLabel, monthOf } from '../domain/month'
+import { installmentAmounts, installmentSchedule, splitInstallments, startMonthOf } from '../domain/projection'
 import { samplePlan } from '../domain/sample'
 import type { Cents, Plan, PlannedExpense } from '../domain/types'
 import { Checkbox, Field, MoneyInput, MonthInput, TextInput, inputClass } from './inputs'
@@ -322,6 +322,9 @@ function PlannedExpenseCard({
 }) {
   const custom = !!it.customAmounts
   const parts = installmentAmounts(it)
+  const schedule = installmentSchedule(it)
+  const quarterly = (it.intervalMonths ?? 1) === 3
+  const unit = quarterly ? 'échéances' : 'mensualités'
   const sum = (a: Cents[]) => a.reduce((s, x) => s + x, 0)
 
   function setInstallments(n: number) {
@@ -348,7 +351,7 @@ function PlannedExpenseCard({
         <Field label="Nom">
           <TextInput value={it.label} placeholder="Vacances" onChange={(label) => onChange({ label })} />
         </Field>
-        <Field label="Montant total" hint={custom ? 'Calculé à partir des mensualités ci-dessous' : undefined}>
+        <Field label="Montant total" hint={custom ? `Calculé à partir des ${unit} ci-dessous` : undefined}>
           {custom ? (
             <div className={`${inputClass} bg-slate-100 text-slate-700`}>{formatEuros(sum(parts))}</div>
           ) : (
@@ -359,28 +362,54 @@ function PlannedExpenseCard({
           <MonthInput value={it.month} onChange={(m) => m && onChange({ month: m })} />
         </Field>
         <Field
-          label="Paiement"
-          hint={!custom && it.installments > 1 && it.totalAmount > 0 ? `${parts.length} × ${formatEuros(parts[parts.length - 1])}` : undefined}
-        >
+          label="Paiement">
           <select className={inputClass} value={it.installments} onChange={(e) => setInstallments(Number(e.target.value))}>
             <option value={1}>Comptant</option>
             {INSTALLMENT_CHOICES.map((n) => (
               <option key={n} value={n}>
-                En {n} mensualités
+                En {n} fois
               </option>
             ))}
           </select>
         </Field>
       </div>
       {it.installments > 1 && (
-        <Checkbox label="Les mensualités n’ont pas toutes le même montant" checked={custom} onChange={setCustom} />
+        <Field label="Fréquence des paiements">
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                [1, 'Tous les mois'],
+                [3, 'Tous les 3 mois (trimestriel)'],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => onChange({ intervalMonths: v === 1 ? undefined : v })}
+                className={`rounded-lg px-2 py-2 text-sm ring-1 ${
+                  (it.intervalMonths ?? 1) === v ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-700 ring-slate-300'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
+      {it.installments > 1 && !custom && it.totalAmount > 0 && (
+        <p className="text-sm text-slate-600">
+          {schedule.length} × {formatEuros(parts[parts.length - 1])}, de {monthLabel(schedule[0].month)} à {monthLabel(schedule[schedule.length - 1].month)}
+        </p>
+      )}
+      {it.installments > 1 && (
+        <Checkbox label={`Les ${unit} n’ont pas toutes le même montant`} checked={custom} onChange={setCustom} />
       )}
       {custom && (
         <div className="space-y-2 rounded-lg bg-white p-3 ring-1 ring-slate-200">
           {parts.map((c, i) => (
             <div key={i} className="grid grid-cols-[1fr_9rem] items-center gap-3">
               <span className="text-sm text-slate-600">
-                {i + 1}. {monthLabel(addMonths(it.month, i))}
+                {i + 1}. {monthLabel(schedule[i].month)}
               </span>
               <MoneyInput value={c} onChange={(v) => setPart(i, v)} />
             </div>
@@ -389,7 +418,7 @@ function PlannedExpenseCard({
       )}
       {showSettled && (
         <Checkbox
-          label={it.installments > 1 ? `Mensualité de ${startLabel} déjà payée` : 'Déjà payé'}
+          label={it.installments > 1 ? `Échéance de ${startLabel} déjà payée` : 'Déjà payé'}
           checked={!!it.settledInStartMonth}
           onChange={(settledInStartMonth) => onChange({ settledInStartMonth })}
         />

@@ -43,10 +43,12 @@ export interface PlannedExpense extends Settleable {
   totalAmount: Cents
   /** Mois du premier paiement */
   month: MonthKey
-  /** 1 = comptant, N = payé en N mensualités */
+  /** 1 = comptant, N = payé en N fois */
   installments: number
+  /** Écart entre deux échéances en mois : 1 = mensuel (défaut), 3 = trimestriel */
+  intervalMonths?: number
   /**
-   * Montant exact de chaque mensualité, si elles ne sont pas égales.
+   * Montant exact de chaque échéance, si elles ne sont pas égales.
    * Absent = découpage automatique de totalAmount en parts égales.
    */
   customAmounts?: Cents[]
