@@ -1,5 +1,18 @@
 import { useState, type ReactNode } from 'react'
 import {
+  Briefcase,
+  CalendarClock,
+  ChevronDown,
+  Gift,
+  Home,
+  Landmark,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react'
+import {
   emptyPlan,
   newFixedExpense,
   newIncomePeriod,
@@ -17,43 +30,61 @@ import { Checkbox, Field, MoneyInput, MonthInput, TextInput, inputClass } from '
 type ListKey = 'incomePeriods' | 'oneOffIncomes' | 'fixedExpenses' | 'plannedExpenses'
 type Item<K extends ListKey> = Plan[K][number]
 
+const TONES = {
+  indigo: 'bg-indigo-500/12 text-indigo-600 dark:text-indigo-300',
+  emerald: 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-300',
+  amber: 'bg-amber-500/15 text-amber-600 dark:text-amber-300',
+  rose: 'bg-rose-500/12 text-rose-600 dark:text-rose-300',
+  violet: 'bg-violet-500/12 text-violet-600 dark:text-violet-300',
+  sky: 'bg-sky-500/12 text-sky-600 dark:text-sky-300',
+} as const
+
 function Section({
   title,
   subtitle,
   total,
+  icon: Icon,
+  tone,
   children,
   defaultOpen = true,
 }: {
   title: string
   subtitle?: string
   total?: string
+  icon: LucideIcon
+  tone: keyof typeof TONES
   children: ReactNode
   defaultOpen?: boolean
 }) {
   return (
-    <details open={defaultOpen} className="group rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4">
-        <div>
-          <h2 className="font-semibold">{title}</h2>
-          {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+    <details open={defaultOpen} className="group rounded-3xl bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(30_27_75/0.12)] ring-1 ring-line">
+      <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${TONES[tone]}`}>
+          <Icon size={22} strokeWidth={2} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-bold leading-tight">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs leading-snug text-muted">{subtitle}</p>}
         </div>
-        <div className="flex items-center gap-2 text-sm text-slate-600">
-          {total}
-          <span className="transition group-open:rotate-180">▾</span>
-        </div>
+        {total && <span className="num shrink-0 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-semibold text-muted">{total}</span>}
+        <ChevronDown size={18} className="shrink-0 text-muted transition group-open:rotate-180" />
       </summary>
-      <div className="space-y-3 border-t border-slate-100 p-4">{children}</div>
+      <div className="space-y-3 px-4 pb-4">{children}</div>
     </details>
   )
 }
 
 function ItemCard({ onDelete, children }: { onDelete: () => void; children: ReactNode }) {
   return (
-    <div className="relative space-y-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+    <div className="relative space-y-3 rounded-2xl bg-surface-2 p-3.5">
       {children}
       <div className="flex justify-end">
-        <button type="button" onClick={onDelete} className="text-sm text-red-600 hover:underline">
-          Supprimer
+        <button
+          type="button"
+          onClick={onDelete}
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-neg hover:bg-neg-soft"
+        >
+          <Trash2 size={14} /> Supprimer
         </button>
       </div>
     </div>
@@ -65,16 +96,16 @@ function AddButton({ onClick, children }: { onClick: () => void; children: React
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-lg border-2 border-dashed border-slate-300 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+      className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line py-3 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-accent-soft"
     >
-      + {children}
+      <Plus size={18} /> {children}
     </button>
   )
 }
 
 function EndBeforeStart({ start, end }: { start: string | null; end: string | null }) {
   if (start && end && end < start)
-    return <p className="text-sm text-red-600">La fin est avant le début : ce flux ne sera jamais compté.</p>
+    return <p className="text-sm text-neg">La fin est avant le début : ce flux ne sera jamais compté.</p>
   return null
 }
 
@@ -103,20 +134,21 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
   return (
     <div className="space-y-4">
       {isEmpty && (
-        <div className="rounded-xl bg-indigo-50 p-4 text-sm text-indigo-900 ring-1 ring-indigo-200">
-          <p className="font-medium">Bienvenue ! Remplissez les blocs ci-dessous, de haut en bas.</p>
-          <p className="mt-1">Tout est enregistré automatiquement sur cet appareil, rien n’est envoyé sur internet.</p>
+        <div className="rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 p-5 text-white shadow-lg shadow-indigo-500/20">
+          <Sparkles size={22} className="mb-2 opacity-90" />
+          <p className="text-lg font-bold">Bienvenue !</p>
+          <p className="mt-1 text-sm text-white/85">Remplissez les blocs ci-dessous de haut en bas, puis appuyez sur « Enregistrer ».</p>
           <button
             type="button"
-            className="mt-2 text-indigo-700 underline"
+            className="mt-3 rounded-full bg-white/15 px-4 py-2 text-sm font-semibold backdrop-blur hover:bg-white/25"
             onClick={() => setPlan(() => samplePlan(monthOf(new Date()), new Date().toISOString().slice(0, 10)))}
           >
-            Ou charger un exemple pour découvrir l’app
+            Charger un exemple pour découvrir l’app
           </button>
         </div>
       )}
 
-      <Section title="1. Point de départ" subtitle="Ce que vous avez sur votre compte aujourd’hui">
+      <Section icon={Landmark} tone="indigo" title="Point de départ" subtitle="Ce que vous avez sur votre compte aujourd’hui">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Solde actuel">
             <MoneyInput
@@ -138,8 +170,10 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
       </Section>
 
       <Section
-        title="2. Revenus mensuels"
-        subtitle="Salaire, allocations… Une ligne par période (ex : 1 200 € jusqu’en juin, puis 1 800 €)"
+        icon={Briefcase}
+        tone="emerald"
+        title="Revenus mensuels"
+        subtitle="Salaire, allocations… une ligne par période"
         total={plan.incomePeriods.length ? `${plan.incomePeriods.length} ligne(s)` : undefined}
       >
         {plan.incomePeriods.map((it) => (
@@ -172,7 +206,9 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
       </Section>
 
       <Section
-        title="3. Rentrées ponctuelles"
+        icon={Gift}
+        tone="sky"
+        title="Rentrées ponctuelles"
         subtitle="Prime, remboursement, vente…"
         total={plan.oneOffIncomes.length ? `${plan.oneOffIncomes.length} ligne(s)` : undefined}
         defaultOpen={plan.oneOffIncomes.length > 0}
@@ -203,7 +239,9 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
       </Section>
 
       <Section
-        title="4. Dépenses fixes mensuelles"
+        icon={Home}
+        tone="rose"
+        title="Dépenses fixes mensuelles"
         subtitle="Loyer, abonnements, courses, transport…"
         total={plan.fixedExpenses.length ? `${formatEuros(fixedTotal, { round: true })}/mois` : undefined}
       >
@@ -218,7 +256,7 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
               </Field>
             </div>
             <details className="text-sm" open={!!(it.startMonth || it.endMonth)}>
-              <summary className="cursor-pointer text-slate-600">Dates de début / fin (optionnel)</summary>
+              <summary className="cursor-pointer text-sm font-medium text-accent">Dates de début / fin (optionnel)</summary>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Field label="À partir de" hint={it.startMonth ? undefined : 'Vide = dès le départ'}>
                   <MonthInput optional value={it.startMonth} onChange={(startMonth) => update('fixedExpenses', it.id, { startMonth })} />
@@ -242,7 +280,9 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
       </Section>
 
       <Section
-        title="5. Grosses dépenses prévues"
+        icon={CalendarClock}
+        tone="amber"
+        title="Grosses dépenses prévues"
         subtitle="Voiture, vacances, ordinateur… payées comptant ou en plusieurs fois"
         total={plan.plannedExpenses.length ? `${plan.plannedExpenses.length} ligne(s)` : undefined}
       >
@@ -259,7 +299,7 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
         <AddButton onClick={() => add('plannedExpenses', newPlannedExpense(plan))}>Ajouter une grosse dépense</AddButton>
       </Section>
 
-      <Section title="6. Matelas de sécurité" subtitle="Le solde en dessous duquel vous ne voulez jamais descendre">
+      <Section icon={ShieldCheck} tone="violet" title="Matelas de sécurité" subtitle="Le solde en dessous duquel vous ne voulez jamais descendre">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Solde minimum">
             <MoneyInput value={plan.safetyCushion} onChange={(safetyCushion) => setPlan((p) => ({ ...p, safetyCushion }))} />
@@ -283,7 +323,7 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
             <span>Tout effacer définitivement ?</span>
             <button
               type="button"
-              className="rounded-lg bg-red-600 px-3 py-1 text-white"
+              className="rounded-full bg-neg px-4 py-1.5 font-semibold text-white"
               onClick={() => {
                 setPlan(() => emptyPlan())
                 setConfirmReset(false)
@@ -291,12 +331,12 @@ export function PlanEditor({ plan, setPlan }: { plan: Plan; setPlan: (u: (p: Pla
             >
               Oui, effacer
             </button>
-            <button type="button" className="text-slate-600 underline" onClick={() => setConfirmReset(false)}>
+            <button type="button" className="text-muted underline" onClick={() => setConfirmReset(false)}>
               Annuler
             </button>
           </div>
         ) : (
-          <button type="button" className="text-sm text-slate-500 underline" onClick={() => setConfirmReset(true)}>
+          <button type="button" className="text-sm text-muted underline" onClick={() => setConfirmReset(true)}>
             Tout effacer et recommencer
           </button>
         )}
@@ -353,7 +393,7 @@ function PlannedExpenseCard({
         </Field>
         <Field label="Montant total" hint={custom ? `Calculé à partir des ${unit} ci-dessous` : undefined}>
           {custom ? (
-            <div className={`${inputClass} bg-slate-100 text-slate-700`}>{formatEuros(sum(parts))}</div>
+            <div className={`${inputClass} num bg-surface-2 font-semibold`}>{formatEuros(sum(parts))}</div>
           ) : (
             <MoneyInput value={it.totalAmount} onChange={(totalAmount) => onChange({ totalAmount })} />
           )}
@@ -386,8 +426,8 @@ function PlannedExpenseCard({
                 key={v}
                 type="button"
                 onClick={() => onChange({ intervalMonths: v === 1 ? undefined : v })}
-                className={`rounded-lg px-2 py-2 text-sm ring-1 ${
-                  (it.intervalMonths ?? 1) === v ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-700 ring-slate-300'
+                className={`rounded-xl px-2 py-2.5 text-sm font-semibold ring-1 transition ${
+                  (it.intervalMonths ?? 1) === v ? 'bg-accent text-white ring-accent dark:text-bg' : 'bg-surface text-ink ring-line'
                 }`}
               >
                 {label}
@@ -397,7 +437,7 @@ function PlannedExpenseCard({
         </Field>
       )}
       {it.installments > 1 && !custom && it.totalAmount > 0 && (
-        <p className="text-sm text-slate-600">
+        <p className="num rounded-xl bg-accent-soft px-3 py-2 text-sm font-medium text-accent-ink">
           {schedule.length} × {formatEuros(parts[parts.length - 1])}, de {monthLabel(schedule[0].month)} à {monthLabel(schedule[schedule.length - 1].month)}
         </p>
       )}
@@ -405,10 +445,10 @@ function PlannedExpenseCard({
         <Checkbox label={`Les ${unit} n’ont pas toutes le même montant`} checked={custom} onChange={setCustom} />
       )}
       {custom && (
-        <div className="space-y-2 rounded-lg bg-white p-3 ring-1 ring-slate-200">
+        <div className="space-y-2 rounded-2xl bg-surface p-3 ring-1 ring-line">
           {parts.map((c, i) => (
             <div key={i} className="grid grid-cols-[1fr_9rem] items-center gap-3">
-              <span className="text-sm text-slate-600">
+              <span className="text-sm text-muted">
                 {i + 1}. {monthLabel(schedule[i].month)}
               </span>
               <MoneyInput value={c} onChange={(v) => setPart(i, v)} />

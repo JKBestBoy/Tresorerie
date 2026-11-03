@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { supabase } from '../sync/remote'
 import { Field, inputClass } from './inputs'
+import { Logo } from './Logo'
 
 type Mode = 'login' | 'signup' | 'reset'
 
@@ -61,10 +62,11 @@ export function LoginScreen() {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-8">
-      <h1 className="text-2xl font-bold">Ma trésorerie</h1>
-      <p className="mb-6 text-sm text-slate-500">Retrouvez vos données sur tous vos appareils.</p>
-      <form onSubmit={submit} className="space-y-4 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <h2 className="font-semibold">{titles[mode]}</h2>
+      <Logo className="mb-5 h-16 w-16 rounded-3xl" size={30} />
+      <h1 className="text-3xl font-extrabold tracking-tight">Ma trésorerie</h1>
+      <p className="mb-7 mt-1 text-muted">Votre solde, vos projets, sans mauvaise surprise.</p>
+      <form onSubmit={submit} className="space-y-4 rounded-3xl bg-surface p-5 shadow-xl shadow-indigo-500/5 ring-1 ring-line">
+        <h2 className="text-lg font-bold">{titles[mode]}</h2>
         <Field label="E-mail">
           <input className={inputClass} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
@@ -81,24 +83,28 @@ export function LoginScreen() {
             />
           </Field>
         )}
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {info && <p className="text-sm text-emerald-700">{info}</p>}
-        <button type="submit" disabled={busy} className="w-full rounded-lg bg-indigo-600 py-2.5 font-medium text-white disabled:opacity-50">
+        {error && <p className="rounded-xl bg-neg-soft px-3 py-2 text-sm text-neg">{error}</p>}
+        {info && <p className="rounded-xl bg-pos-soft px-3 py-2 text-sm text-pos">{info}</p>}
+        <button
+          type="submit"
+          disabled={busy}
+          className="w-full rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 py-3 font-bold text-white shadow-md shadow-indigo-500/30 disabled:opacity-50"
+        >
           {busy ? '…' : mode === 'login' ? 'Se connecter' : mode === 'signup' ? 'Créer le compte' : 'Envoyer le lien'}
         </button>
-        <div className="flex flex-col gap-1 text-center text-sm">
+        <div className="flex flex-col gap-2 pt-1 text-center text-sm">
           {mode !== 'login' && (
-            <button type="button" className="text-indigo-700 underline" onClick={() => setMode('login')}>
+            <button type="button" className="font-semibold text-accent" onClick={() => setMode('login')}>
               J’ai déjà un compte
             </button>
           )}
           {mode !== 'signup' && (
-            <button type="button" className="text-indigo-700 underline" onClick={() => setMode('signup')}>
+            <button type="button" className="font-semibold text-accent" onClick={() => setMode('signup')}>
               Créer un compte
             </button>
           )}
           {mode === 'login' && (
-            <button type="button" className="text-slate-500 underline" onClick={() => setMode('reset')}>
+            <button type="button" className="text-muted" onClick={() => setMode('reset')}>
               Mot de passe oublié ?
             </button>
           )}
@@ -115,7 +121,7 @@ export function NewPasswordScreen({ onDone }: { onDone: () => void }) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4">
       <form
-        className="space-y-4 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+        className="space-y-4 rounded-3xl bg-surface p-5 shadow-xl ring-1 ring-line"
         onSubmit={async (e) => {
           e.preventDefault()
           const { error } = await supabase!.auth.updateUser({ password })
@@ -123,10 +129,10 @@ export function NewPasswordScreen({ onDone }: { onDone: () => void }) {
           else onDone()
         }}
       >
-        <h2 className="font-semibold">Choisissez un nouveau mot de passe</h2>
+        <h2 className="text-lg font-bold">Choisissez un nouveau mot de passe</h2>
         <input className={inputClass} type="password" autoComplete="new-password" minLength={6} required value={password} onChange={(e) => setPassword(e.target.value)} />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button className="w-full rounded-lg bg-indigo-600 py-2.5 font-medium text-white">Valider</button>
+        {error && <p className="rounded-xl bg-neg-soft px-3 py-2 text-sm text-neg">{error}</p>}
+        <button className="w-full rounded-full bg-accent py-3 font-bold text-white dark:text-bg">Valider</button>
       </form>
     </div>
   )

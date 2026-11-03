@@ -3,14 +3,14 @@ import { parseEuros } from '../domain/money'
 import type { Cents, MonthKey } from '../domain/types'
 
 export const inputClass =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200'
+  'w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-base text-ink placeholder:text-muted/60 transition focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15'
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
+      <span className="mb-1.5 block text-[13px] font-semibold text-muted">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
     </label>
   )
 }
@@ -33,7 +33,7 @@ export function MoneyInput({ value, onChange, placeholder = '0' }: { value: Cent
   return (
     <div className="relative">
       <input
-        className={`${inputClass} pr-8 ${invalid ? 'border-red-500' : ''}`}
+        className={`${inputClass} num pr-9 ${invalid ? 'border-neg focus:border-neg focus:ring-neg/15' : ''}`}
         inputMode="decimal"
         placeholder={placeholder}
         value={text}
@@ -43,7 +43,7 @@ export function MoneyInput({ value, onChange, placeholder = '0' }: { value: Cent
           if (c !== null && c >= 0) onChange(c)
         }}
       />
-      <span className="pointer-events-none absolute right-3 top-2 text-slate-400">€</span>
+      <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted">€</span>
     </div>
   )
 }
@@ -75,7 +75,7 @@ export function MonthInput({
       {optional && value !== null && (
         <button
           type="button"
-          className="shrink-0 rounded-lg px-2 text-sm text-slate-500 hover:bg-slate-100"
+          className="shrink-0 rounded-xl px-3 text-sm text-muted hover:bg-surface-2"
           onClick={() => onChange(null)}
           title={emptyLabel}
         >
@@ -92,8 +92,8 @@ export function TextInput({ value, onChange, placeholder }: { value: string; onC
 
 export function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (b: boolean) => void; label: string }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-slate-700">
-      <input type="checkbox" className="h-5 w-5 accent-indigo-600" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className="flex cursor-pointer items-start gap-2.5 text-sm text-ink">
+      <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent)]" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
   )
