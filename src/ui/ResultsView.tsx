@@ -3,6 +3,7 @@ import { AlertTriangle, Circle, ArrowDownLeft, ArrowUpRight, CalendarClock, Chec
 import { investmentsSummary } from '../domain/investments'
 import type { useQuotes } from '../sync/quotes'
 import { NewMonthCard } from './Pointage'
+import { BalanceChart } from './BalanceChart'
 import { MoneyInput } from './inputs'
 import { setActual, setOpening, startMonthOf, toggleSettled } from '../domain/projection'
 import { cushionReport, freeToSpend } from '../domain/analysis'
@@ -161,6 +162,9 @@ export function ResultsView({
 
       </div>
 
+      <div className="space-y-4">
+      <BalanceChart rows={rows} cushion={plan.safetyCushion} />
+
       {/* Mois par mois */}
       <section>
         <h2 className="mb-2 px-1 text-sm font-bold text-muted">Mois par mois</h2>
@@ -187,6 +191,7 @@ export function ResultsView({
         {/* Grand écran : tableau compact */}
         <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} openAtStart={start} onToggle={toggle} onAmount={setAmount} onOpening={setOpeningOf} />
       </section>
+      </div>
     </div>
   )
 }
