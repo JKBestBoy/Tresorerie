@@ -73,7 +73,7 @@ function Main({
   email: string | null
   theme: ReturnType<typeof useTheme>
 }) {
-  const { plan, setPlan, dirty, save, revert, status, message, dismissMessage } = usePlan(online)
+  const { plan, setPlan, commit, dirty, save, revert, status, message, dismissMessage } = usePlan(online)
   const live = useQuotes(plan?.investments)
   const [tab, setTab] = useState<Tab | null>(null)
   const [menu, setMenu] = useState(false)
@@ -112,7 +112,7 @@ function Main({
   return (
     <div className="min-h-dvh pb-44 lg:pb-28">
       <header className="sticky top-0 z-20 bg-bg/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 py-3 lg:max-w-6xl lg:px-8">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 py-3 lg:max-w-7xl lg:px-8">
           <div className="flex items-center gap-2.5">
             <Logo />
             <div>
@@ -181,7 +181,7 @@ function Main({
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 pt-2 lg:max-w-6xl lg:px-8 lg:pt-4">
+      <main className="mx-auto max-w-3xl px-4 pt-2 lg:max-w-7xl lg:px-8 lg:pt-4">
         {message && (
           <div className="mb-4 flex items-start justify-between gap-2 rounded-2xl bg-warn-soft p-3 text-sm text-warn ring-1 ring-warn/20">
             <span>{message}</span>
@@ -198,7 +198,7 @@ function Main({
                 Les résultats tiennent compte de vos modifications non enregistrées.
               </p>
             )}
-            <ResultsView plan={plan} onEdit={() => setTab('data')} live={live} />
+            <ResultsView plan={plan} onEdit={() => setTab('data')} live={live} setPlan={commit} />
           </>
         )}
       </main>
@@ -213,7 +213,7 @@ function Main({
               </button>
               <button
                 type="button"
-                onClick={save}
+                onClick={() => save()}
                 className="rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/30"
               >
                 Enregistrer

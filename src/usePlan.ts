@@ -146,12 +146,15 @@ export function usePlan(online: boolean) {
     setDraft((prev) => (prev ? (typeof updater === 'function' ? updater(prev) : updater) : prev))
   }, [])
 
-  const save = useCallback(async () => {
-    if (!draft) return
+  /** Enregistre le brouillon (ou `override`, qui devient alors le brouillon). */
+  const save = useCallback(async (override?: Plan) => {
+    const toSave = override ?? draft
+    if (!toSave) return
+    if (override) setDraft(override)
     setStatus('saving')
     setMessage(null)
     const base = savedRef.current
-    const rec: LocalRecord = { plan: draft, remoteVersion: base?.remoteVersion ?? null, pendingSync: online }
+    const rec: LocalRecord = { plan: toSave, remoteVersion: base?.remoteVersion ?? null, pendingSync: online }
     try {
       await saveLocal(rec)
       setSaved(rec)
@@ -189,5 +192,18 @@ export function usePlan(online: boolean) {
     if (savedRef.current) setDraft(savedRef.current.plan)
   }, [])
 
-  return { plan: draft, setPlan, dirty, save, revert, status, message, dismissMessage: () => setMessage(null) }
+  /**
+   * Petite modification enregistrée tout de suite (ex : pointage). Si d'autres modifications
+   * sont en cours, elle rejoint simplement le brouillon et partira avec « Enregistrer ».
+   */
+  const commit = useCallback(
+    (updater: (p: Plan) => Plan) => {
+      if (!draft) return
+      if (dirtyRef.current) setDraft(updater(draft))
+      else save(updater(draft))
+    },
+    [draft, save],
+  )
+
+  return { plan: draft, setPlan, commit, dirty, save, revert, status, message, dismissMessage: () => setMessage(null) }
 }

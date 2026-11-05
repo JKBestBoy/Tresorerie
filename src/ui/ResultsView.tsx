@@ -2,6 +2,8 @@ import { Fragment, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, PencilLine, RefreshCw, TrendingUp } from 'lucide-react'
 import { investmentsSummary } from '../domain/investments'
 import type { useQuotes } from '../sync/quotes'
+import { NewMonthCard, PointageCard } from './Pointage'
+import { startMonthOf } from '../domain/projection'
 import { cushionReport, freeToSpend } from '../domain/analysis'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
@@ -13,7 +15,17 @@ const signed = (c: Cents) => (c > 0 ? '+' : c < 0 ? '−' : '') + eur(Math.abs(c
 const signedExact = (c: Cents) => (c > 0 ? '+' : c < 0 ? '−' : '') + formatEuros(Math.abs(c))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => void; live: ReturnType<typeof useQuotes> }) {
+export function ResultsView({
+  plan,
+  onEdit,
+  live,
+  setPlan,
+}: {
+  plan: Plan
+  onEdit: () => void
+  live: ReturnType<typeof useQuotes>
+  setPlan: (u: (p: Plan) => Plan) => void
+}) {
   const rows = useMemo(() => project(plan), [plan])
   const current = monthOf(new Date())
   const inv = investmentsSummary(plan, live.quotes)
@@ -124,6 +136,12 @@ export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => 
           </span>
           <p className="text-sm font-semibold">Vos liquidités restent au-dessus du matelas sur toute la période.</p>
         </section>
+      )}
+
+      {current > startMonthOf(plan) ? (
+        <NewMonthCard key={current} plan={plan} current={current} suggested={thisMonth.opening} setPlan={setPlan} />
+      ) : (
+        <PointageCard plan={plan} row={rows[0]} setPlan={setPlan} />
       )}
 
       {inv.lines.length > 0 && <InvestmentsCard summary={inv} cash={thisMonth.opening} live={live} />}

@@ -31,6 +31,26 @@ function isActive(month: MonthKey, start: MonthKey | null, end: MonthKey | null)
   return (start === null || month >= start) && (end === null || month <= end)
 }
 
+/**
+ * Flux du mois de départ déjà passés sur le compte (déjà inclus dans le solde saisi).
+ * Si le pointage date d'un autre mois (le solde a été mis à jour depuis), rien n'est pointé.
+ * Plans plus anciens : on relit les cases « déjà passé » de chaque élément.
+ */
+export function settledIds(plan: Plan): Set<string> {
+  const start = startMonthOf(plan)
+  if (plan.settled) return new Set(plan.settled.month === start ? plan.settled.ids : [])
+  const legacy = [...plan.incomePeriods, ...plan.oneOffIncomes, ...plan.fixedExpenses, ...plan.plannedExpenses]
+  return new Set(legacy.filter((x) => x.settledInStartMonth).map((x) => x.id))
+}
+
+/** Coche ou décoche un flux dans le pointage du mois de départ. */
+export function toggleSettled(plan: Plan, id: string): Plan {
+  const ids = settledIds(plan)
+  if (ids.has(id)) ids.delete(id)
+  else ids.add(id)
+  return { ...plan, settled: { month: startMonthOf(plan), ids: [...ids] } }
+}
+
 /** Premier mois de la projection = mois de la date du capital de départ. */
 export function startMonthOf(plan: Plan): MonthKey {
   return monthOf(plan.startingCapital.date)
@@ -68,7 +88,8 @@ export function project(
     if (arr) arr.push(l)
     else lines.set(m, [l])
   }
-  const settled = (m: MonthKey, flag?: boolean) => m === start && !!flag
+  const pointed = settledIds(plan)
+  const settled = (m: MonthKey, id: string) => m === start && pointed.has(id)
 
   for (let i = 0; i < count; i++) {
     const m = addMonths(start, i)
@@ -79,7 +100,7 @@ export function project(
           kind: 'income',
           label: p.label,
           amount: p.monthlyAmount,
-          settled: settled(m, p.settledInStartMonth),
+          settled: settled(m, p.id),
         })
       }
     }
@@ -90,7 +111,7 @@ export function project(
           kind: 'fixedExpense',
           label: f.label,
           amount: -f.monthlyAmount,
-          settled: settled(m, f.settledInStartMonth),
+          settled: settled(m, f.id),
         })
       }
     }
@@ -102,7 +123,7 @@ export function project(
       kind: 'oneOffIncome',
       label: o.label,
       amount: o.amount,
-      settled: settled(o.month, o.settledInStartMonth),
+      settled: settled(o.month, o.id),
     })
   }
 
@@ -115,7 +136,7 @@ export function project(
         kind: 'plannedExpense',
         label,
         amount: -amount,
-        settled: settled(m, e.settledInStartMonth),
+        settled: settled(m, e.id),
       })
       if (m >= start && m <= end) {
         const arr = markers.get(m)

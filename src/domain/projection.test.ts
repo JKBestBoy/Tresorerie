@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addMonths, monthDiff } from './month'
 import { parseEuros } from './money'
-import { project, splitInstallments } from './projection'
+import { project, settledIds, splitInstallments, toggleSettled } from './projection'
 import { cushionReport, freeToSpend, whatIf } from './analysis'
 import type { Plan } from './types'
 
@@ -97,6 +97,36 @@ describe('projection', () => {
     expect(rows[0]).toMatchObject({ incomes: 0, outflows: 80000, closing: 20000 })
     expect(rows[0].details.find((d) => d.sourceId === 'a')?.settled).toBe(true)
     expect(rows[1]).toMatchObject({ incomes: 120000, outflows: 80000 })
+  })
+
+  it('pointage du mois : les flux cochés ne sont pas recomptés', () => {
+    const p = plan({
+      incomePeriods: [{ id: 'a', label: 'Salaire', monthlyAmount: 120000, startMonth: null, endMonth: null }],
+      fixedExpenses: [
+        { id: 'f', label: 'Loyer', monthlyAmount: 80000, startMonth: null, endMonth: null, settledInStartMonth: true },
+        { id: 'i', label: 'Internet', monthlyAmount: 3000, startMonth: null, endMonth: null },
+      ],
+    })
+    // Anciennes cases : le loyer est pointé
+    expect(project(p, [], NOW)[0]).toMatchObject({ incomes: 120000, outflows: 3000 })
+    // Pointage : on coche Internet (le loyer reste pointé), puis on décoche le loyer
+    const p2 = toggleSettled(p, 'i')
+    expect([...settledIds(p2)].sort()).toEqual(['f', 'i'])
+    expect(project(p2, [], NOW)[0].outflows).toBe(0)
+    const p3 = toggleSettled(p2, 'f')
+    expect(project(p3, [], NOW)[0].outflows).toBe(80000)
+    // Les mois suivants comptent tout normalement
+    expect(project(p3, [], NOW)[1].outflows).toBe(83000)
+  })
+
+  it('pointage remis à zéro quand le mois de départ change', () => {
+    const p = toggleSettled(
+      plan({ fixedExpenses: [{ id: 'i', label: 'Internet', monthlyAmount: 3000, startMonth: null, endMonth: null }] }),
+      'i',
+    )
+    const next = { ...p, startingCapital: { amount: 0, date: '2026-12-02' } }
+    expect(settledIds(next).size).toBe(0)
+    expect(project(next, [], '2026-12')[0].outflows).toBe(3000)
   })
 
   it('étale une grosse dépense en mensualités et pose les marqueurs', () => {

@@ -6,7 +6,6 @@ import {
   newIncomePeriod,
   newOneOffIncome,
   newPlannedExpense,
-  touchesStartMonth,
 } from '../domain/defaults'
 import { formatEuros } from '../domain/money'
 import { addMonths, monthLabel, monthOf, monthShortLabel } from '../domain/month'
@@ -130,13 +129,6 @@ export function PlanEditor({
               </Field>
             </div>
             <EndBeforeStart start={it.startMonth} end={it.endMonth} />
-            {touchesStartMonth(plan, it) && (
-              <Checkbox
-                label={`Déjà reçu en ${monthLabel(start)} (inclus dans le solde)`}
-                checked={!!it.settledInStartMonth}
-                onChange={(settledInStartMonth) => update('incomePeriods', it.id, { settledInStartMonth })}
-              />
-            )}
           </ItemCard>
         ))}
         <AddButton onClick={() => add('incomePeriods', newIncomePeriod())}>Ajouter un revenu</AddButton>
@@ -169,13 +161,6 @@ export function PlanEditor({
                 <MonthInput value={it.month} onChange={(m) => m && update('oneOffIncomes', it.id, { month: m })} />
               </Field>
             </div>
-            {touchesStartMonth(plan, it) && (
-              <Checkbox
-                label={`Déjà reçu (inclus dans le solde)`}
-                checked={!!it.settledInStartMonth}
-                onChange={(settledInStartMonth) => update('oneOffIncomes', it.id, { settledInStartMonth })}
-              />
-            )}
           </ItemCard>
         ))}
         <AddButton onClick={() => add('oneOffIncomes', newOneOffIncome(plan))}>Ajouter une rentrée</AddButton>
@@ -221,13 +206,6 @@ export function PlanEditor({
               </div>
             </details>
             <EndBeforeStart start={it.startMonth} end={it.endMonth} />
-            {touchesStartMonth(plan, it) && (
-              <Checkbox
-                label={`Déjà prélevé en ${monthLabel(start)}`}
-                checked={!!it.settledInStartMonth}
-                onChange={(settledInStartMonth) => update('fixedExpenses', it.id, { settledInStartMonth })}
-              />
-            )}
           </ItemCard>
         ))}
         <AddButton onClick={() => add('fixedExpenses', newFixedExpense())}>Ajouter une dépense fixe</AddButton>
@@ -244,8 +222,6 @@ export function PlanEditor({
           <PlannedExpenseCard
             key={it.id}
             item={it}
-            showSettled={touchesStartMonth(plan, it)}
-            startLabel={monthLabel(start)}
             onChange={(patch) => update('plannedExpenses', it.id, patch)}
             onDelete={() => remove('plannedExpenses', it.id)}
           />
@@ -315,14 +291,10 @@ const INSTALLMENT_CHOICES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 18, 24, 36, 48]
 
 function PlannedExpenseCard({
   item: it,
-  showSettled,
-  startLabel,
   onChange,
   onDelete,
 }: {
   item: PlannedExpense
-  showSettled: boolean
-  startLabel: string
   onChange: (patch: Partial<PlannedExpense>) => void
   onDelete: () => void
 }) {
@@ -468,13 +440,6 @@ function PlannedExpenseCard({
             ),
           )}
         </div>
-      )}
-      {showSettled && (
-        <Checkbox
-          label={it.installments > 1 ? `Échéance de ${startLabel} déjà payée` : 'Déjà payé'}
-          checked={!!it.settledInStartMonth}
-          onChange={(settledInStartMonth) => onChange({ settledInStartMonth })}
-        />
       )}
     </ItemCard>
   )

@@ -86,6 +86,12 @@ export interface Plan {
   plannedExpenses: PlannedExpense[]
   /** Investissements (absent sur les plans créés avant leur ajout) */
   investments?: Investment[]
+  /**
+   * Pointage du mois de départ : identifiants des flux déjà passés sur le compte
+   * (donc déjà inclus dans le solde de départ). Ignoré si `month` n'est plus le mois de départ.
+   * Remplace les anciennes cases `settledInStartMonth` de chaque élément.
+   */
+  settled?: { month: MonthKey; ids: string[] }
   /** Ancien réglage (part des investissements comptée dans la sécurité) : n'est plus utilisé. */
   investmentsCountedPct?: number
 }
