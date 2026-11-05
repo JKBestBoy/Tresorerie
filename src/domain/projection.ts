@@ -1,5 +1,5 @@
 import { addMonths, maxMonth, monthDiff, monthOf } from './month'
-import type { Cents, FlowLine, MonthKey, MonthRow, Plan, PlannedExpense } from './types'
+import type { Cents, FlowLine, HistoryMonth, MonthKey, MonthRow, Plan, PlannedExpense } from './types'
 
 /**
  * Découpe un montant en N mensualités entières (centimes).
@@ -62,11 +62,39 @@ export function toggleSettled(plan: Plan, month: MonthKey, id: string): Plan {
 export function withNewBalance(plan: Plan, amount: number, date: string): Plan {
   const keys = paidKeys(plan)
   const month = date.slice(0, 7)
+  // Archive les mois écoulés (du mois de départ jusqu'au mois précédent le nouveau solde)
+  const past = month > startMonthOf(plan) ? project(plan, [], month).filter((r) => r.month < month) : []
+  const archived: HistoryMonth[] = past.map((r, i) => ({
+    month: r.month,
+    opening: r.opening,
+    incomes: r.incomes,
+    outflows: r.outflows,
+    closing: r.closing,
+    lines: r.details.map((d) => ({
+      id: d.sourceId,
+      kind: d.kind,
+      label: d.label,
+      planned: d.planned ?? d.amount,
+      amount: d.amount,
+      paid: d.settled,
+    })),
+    ...(i === past.length - 1 ? { realBalance: { amount, date } } : {}),
+    archivedAt: new Date().toISOString(),
+  }))
+  const history = [...(plan.history ?? []).filter((h) => !archived.some((a) => a.month === h.month)), ...archived].sort((a, b) =>
+    a.month.localeCompare(b.month),
+  )
+  const keep = <T,>(rec: Record<string, T> | undefined, keyMonth: (k: string) => string) =>
+    rec ? Object.fromEntries(Object.entries(rec).filter(([k]) => keyMonth(k) >= month)) : undefined
   return {
     ...plan,
     startingCapital: { amount, date },
     paid: [...keys].filter((k) => k.slice(0, 7) >= month).sort(),
     settled: undefined,
+    // Les montants réels et soldes saisis des mois écoulés sont désormais dans l'historique
+    actuals: keep(plan.actuals, (k) => k.slice(0, 7)),
+    openings: keep(plan.openings, (k) => k),
+    history,
   }
 }
 

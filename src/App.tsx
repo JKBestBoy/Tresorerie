@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BarChart3, Cloud, CloudOff, LogOut, Monitor, Moon, PencilLine, Settings2, Sun, TriangleAlert, X } from 'lucide-react'
+import { BarChart3, Cloud, CloudOff, LogOut, Monitor, Moon, PencilLine, Settings2, Sun, TriangleAlert, X, History as HistoryIcon } from 'lucide-react'
 import { clearLocal } from './storage'
 import { remoteEnabled } from './sync/config'
 import { supabase } from './sync/remote'
@@ -9,11 +9,12 @@ import { Logo } from './ui/Logo'
 import { UpdateBanner } from './ui/UpdateBanner'
 import { PlanEditor } from './ui/PlanEditor'
 import { ResultsView } from './ui/ResultsView'
+import { HistoryView } from './ui/HistoryView'
 import { useTheme, type ThemeChoice } from './ui/theme'
 import { usePlan, type SyncStatus } from './usePlan'
 import { useQuotes } from './sync/quotes'
 
-type Tab = 'results' | 'data'
+type Tab = 'results' | 'data' | 'history'
 
 export default function App() {
   return (
@@ -66,6 +67,7 @@ function StatusPill({ status, dirty, online }: { status: SyncStatus; dirty: bool
 const TABS = [
   ['results', BarChart3, 'Résultats'],
   ['data', PencilLine, 'Mes données'],
+  ['history', HistoryIcon, 'Historique'],
 ] as const
 
 const THEMES: [ThemeChoice, string, typeof Sun][] = [
@@ -200,6 +202,7 @@ function Main({
             </button>
           </div>
         )}
+        {plan && tab === 'history' && <HistoryView plan={plan} />}
         {plan && tab === 'data' && <PlanEditor plan={plan} setPlan={setPlan} quotes={live.quotes} />}
         {plan && tab === 'results' && (
           <>
@@ -230,17 +233,17 @@ function Main({
               </button>
             </div>
           )}
-          <nav className="grid grid-cols-2 gap-1 rounded-full bg-surface/90 p-1.5 shadow-xl ring-1 ring-line backdrop-blur-xl lg:hidden">
+          <nav className="grid grid-cols-3 gap-1 rounded-[1.75rem] bg-surface/90 p-1.5 shadow-xl ring-1 ring-line backdrop-blur-xl lg:hidden">
             {TABS.map(([key, Icon, label]) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setTab(key)}
-                className={`flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold transition ${
+                className={`flex flex-col items-center justify-center gap-0.5 rounded-3xl py-1.5 text-[11px] font-semibold transition ${
                   tab === key ? 'bg-accent text-white shadow-md dark:text-bg' : 'text-muted'
                 }`}
               >
-                <Icon size={18} />
+                <Icon size={19} />
                 {label}
               </button>
             ))}

@@ -109,11 +109,40 @@ export interface Plan {
    * est `startingCapital`). La projection repart de ce montant à partir de ce mois.
    */
   openings?: Record<MonthKey, Cents>
+  /** Mois écoulés archivés à chaque mise à jour du solde (du plus ancien au plus récent) */
+  history?: HistoryMonth[]
   /** Ancien réglage (part des investissements comptée dans la sécurité) : n'est plus utilisé. */
   investmentsCountedPct?: number
 }
 
 export type FlowKind = 'income' | 'oneOffIncome' | 'fixedExpense' | 'plannedExpense'
+
+/** Une ligne d'un mois archivé */
+export interface HistoryLine {
+  id: string
+  kind: FlowKind
+  label: string
+  /** Montant prévu (signé) */
+  planned: Cents
+  /** Montant retenu (signé) : le montant réel saisi, sinon le prévu */
+  amount: Cents
+  /** Pointé comme passé sur le compte */
+  paid: boolean
+}
+
+/** Un mois écoulé, tel qu'il était connu au moment de la mise à jour du solde */
+export interface HistoryMonth {
+  month: MonthKey
+  opening: Cents
+  incomes: Cents
+  outflows: Cents
+  /** Solde de fin de mois prévu par l'app */
+  closing: Cents
+  lines: HistoryLine[]
+  /** Solde réel saisi à la mise à jour suivante (sur le dernier mois archivé) */
+  realBalance?: { amount: Cents; date: string }
+  archivedAt: string
+}
 
 export interface FlowLine {
   sourceId: string
