@@ -52,6 +52,21 @@ describe('projection', () => {
     expect(rows[11].month).toBe('2027-10')
   })
 
+  it('horizon « auto » : jusqu’à la dernière grosse dépense prévue', () => {
+    const p = plan({
+      horizonMonths: 'auto',
+      plannedExpenses: [
+        { id: 'a', label: 'PC', totalAmount: 1000, month: '2027-02', installments: 1 },
+        { id: 'b', label: 'Dentiste', totalAmount: 4000, month: '2026-12', installments: 4, intervalMonths: 3 },
+      ],
+    })
+    const rows = project(p, [], NOW)
+    expect(rows[0].month).toBe('2026-11')
+    expect(rows.at(-1)!.month).toBe('2027-09') // dernière échéance du dentiste
+    // Sans grosse dépense : 12 mois
+    expect(project(plan({ horizonMonths: 'auto' }), [], NOW)).toHaveLength(12)
+  })
+
   it('l’horizon part du mois actuel si le capital date du passé', () => {
     const rows = project(plan({ startingCapital: { amount: 0, date: '2026-09-01' } }), [], NOW)
     expect(rows[0].month).toBe('2026-09')

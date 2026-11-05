@@ -103,13 +103,28 @@ export function startMonthOf(plan: Plan): MonthKey {
   return monthOf(plan.startingCapital.date)
 }
 
+/** Mois de la dernière échéance de grosse dépense prévue (null s'il n'y en a pas). */
+export function lastPlannedMonth(plan: Plan): MonthKey | null {
+  let last: MonthKey | null = null
+  for (const e of plan.plannedExpenses) {
+    for (const { month } of installmentSchedule(e)) if (!last || month > last) last = month
+  }
+  return last
+}
+
 /**
- * Dernier mois projeté : l'horizon (12/24 mois) est compté à partir du plus tard
- * entre le mois de départ et le mois actuel, pour qu'un capital saisi il y a
- * quelque temps donne toujours une vue complète vers l'avenir.
+ * Dernier mois projeté, compté à partir du plus tard entre le mois de départ et le mois
+ * actuel (un solde saisi il y a quelque temps donne toujours une vue vers l'avenir) :
+ * - 12 ou 24 mois ;
+ * - 'auto' : jusqu'à la dernière grosse dépense prévue (12 mois s'il n'y en a pas à venir).
  */
 export function endMonthOf(plan: Plan, currentMonth: MonthKey): MonthKey {
-  return addMonths(maxMonth(startMonthOf(plan), currentMonth), plan.horizonMonths - 1)
+  const base = maxMonth(startMonthOf(plan), currentMonth)
+  if (plan.horizonMonths === 'auto') {
+    const last = lastPlannedMonth(plan)
+    return last && last >= base ? last : addMonths(base, 11)
+  }
+  return addMonths(base, plan.horizonMonths - 1)
 }
 
 /**

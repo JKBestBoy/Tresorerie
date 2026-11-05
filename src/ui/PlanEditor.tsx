@@ -238,8 +238,11 @@ export function PlanEditor({
             <select
               className={inputClass}
               value={plan.horizonMonths}
-              onChange={(e) => setPlan((p) => ({ ...p, horizonMonths: Number(e.target.value) as 12 | 24 }))}
+              onChange={(e) =>
+                setPlan((p) => ({ ...p, horizonMonths: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 12 | 24) }))
+              }
             >
+              <option value="auto">Jusqu’à ma dernière grosse dépense</option>
               <option value={12}>12 mois</option>
               <option value={24}>24 mois</option>
             </select>

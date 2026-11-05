@@ -79,7 +79,8 @@ export interface Plan {
   schemaVersion: 1
   startingCapital: { amount: Cents; date: string } // date ISO "2026-11-03"
   safetyCushion: Cents
-  horizonMonths: 12 | 24
+  /** Durée de la projection ; 'auto' = jusqu'au mois de la dernière grosse dépense prévue */
+  horizonMonths: 12 | 24 | 'auto'
   incomePeriods: IncomePeriod[]
   oneOffIncomes: OneOffIncome[]
   fixedExpenses: FixedExpense[]

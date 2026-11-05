@@ -163,10 +163,7 @@ export function ResultsView({
 
       {/* Mois par mois */}
       <section>
-        <div className="mb-2 flex items-baseline justify-between px-1">
-          <h2 className="text-sm font-bold text-muted">Mois par mois</h2>
-          <p className="text-xs text-muted">Reste = entrées − sorties du mois</p>
-        </div>
+        <h2 className="mb-2 px-1 text-sm font-bold text-muted">Mois par mois</h2>
         <p className="mb-2 px-1 text-xs text-muted">
           Cochez ce qui est déjà passé sur votre compte depuis votre solde du{' '}
           {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))}

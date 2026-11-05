@@ -20,7 +20,7 @@ export function emptyPlan(): Plan {
     schemaVersion: 1,
     startingCapital: { amount: 0, date: todayISO() },
     safetyCushion: 0,
-    horizonMonths: 12,
+    horizonMonths: 'auto',
     incomePeriods: [],
     oneOffIncomes: [],
     fixedExpenses: [],
