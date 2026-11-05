@@ -92,6 +92,17 @@ export interface Plan {
    * Remplace les anciennes cases `settledInStartMonth` de chaque élément.
    */
   settled?: { month: MonthKey; ids: string[] }
+  /**
+   * Pointage, tous mois confondus : clés « AAAA-MM|id » des flux déjà passés sur le compte
+   * (donc déjà inclus dans le solde de départ), y compris payés en avance.
+   * Prioritaire sur `settled` et sur les anciennes cases.
+   */
+  paid?: string[]
+  /**
+   * Montant réel d'un flux pour un mois donné (clé « AAAA-MM|id », montant positif en centimes),
+   * quand il diffère du montant prévu (ex : courses moins chères que prévu ce mois-ci).
+   */
+  actuals?: Record<string, Cents>
   /** Ancien réglage (part des investissements comptée dans la sécurité) : n'est plus utilisé. */
   investmentsCountedPct?: number
 }
@@ -106,6 +117,8 @@ export interface FlowLine {
   amount: Cents
   /** Flux du mois de départ marqué "déjà passé" : affiché mais non compté */
   settled: boolean
+  /** Montant prévu (signé) quand le montant de ce mois a été corrigé à la main */
+  planned?: Cents
 }
 
 export interface MonthRow {

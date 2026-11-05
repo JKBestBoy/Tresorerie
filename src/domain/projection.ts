@@ -31,24 +31,52 @@ function isActive(month: MonthKey, start: MonthKey | null, end: MonthKey | null)
   return (start === null || month >= start) && (end === null || month <= end)
 }
 
+export const paidKey = (month: MonthKey, id: string) => `${month}|${id}`
+
 /**
- * Flux du mois de départ déjà passés sur le compte (déjà inclus dans le solde saisi).
- * Si le pointage date d'un autre mois (le solde a été mis à jour depuis), rien n'est pointé.
- * Plans plus anciens : on relit les cases « déjà passé » de chaque élément.
+ * Pointage : clés « mois|id » des flux déjà passés sur le compte (inclus dans le solde saisi).
+ * Les mois antérieurs au mois de départ sont ignorés (déjà couverts par le solde).
+ * Plans plus anciens : pointage du seul mois de départ (`settled`), ou anciennes cases.
  */
-export function settledIds(plan: Plan): Set<string> {
+export function paidKeys(plan: Plan): Set<string> {
   const start = startMonthOf(plan)
-  if (plan.settled) return new Set(plan.settled.month === start ? plan.settled.ids : [])
+  if (plan.paid) return new Set(plan.paid.filter((k) => k.slice(0, 7) >= start))
+  if (plan.settled) return new Set(plan.settled.month === start ? plan.settled.ids.map((id) => paidKey(start, id)) : [])
   const legacy = [...plan.incomePeriods, ...plan.oneOffIncomes, ...plan.fixedExpenses, ...plan.plannedExpenses]
-  return new Set(legacy.filter((x) => x.settledInStartMonth).map((x) => x.id))
+  return new Set(legacy.filter((x) => x.settledInStartMonth).map((x) => paidKey(start, x.id)))
 }
 
-/** Coche ou décoche un flux dans le pointage du mois de départ. */
-export function toggleSettled(plan: Plan, id: string): Plan {
-  const ids = settledIds(plan)
-  if (ids.has(id)) ids.delete(id)
-  else ids.add(id)
-  return { ...plan, settled: { month: startMonthOf(plan), ids: [...ids] } }
+/** Coche ou décoche un flux d'un mois donné. */
+export function toggleSettled(plan: Plan, month: MonthKey, id: string): Plan {
+  const keys = paidKeys(plan)
+  const k = paidKey(month, id)
+  if (keys.has(k)) keys.delete(k)
+  else keys.add(k)
+  return { ...plan, paid: [...keys].sort(), settled: undefined }
+}
+
+/**
+ * Nouveau solde saisi aujourd'hui. Tout ce qui est déjà coché était déjà passé sur le compte,
+ * donc est inclus dans ce nouveau solde : on garde ces coches (mois du solde et suivants).
+ */
+export function withNewBalance(plan: Plan, amount: number, date: string): Plan {
+  const keys = paidKeys(plan)
+  const month = date.slice(0, 7)
+  return {
+    ...plan,
+    startingCapital: { amount, date },
+    paid: [...keys].filter((k) => k.slice(0, 7) >= month).sort(),
+    settled: undefined,
+  }
+}
+
+/** Corrige (ou remet au prévu avec `null`) le montant réel d'un flux pour un mois. */
+export function setActual(plan: Plan, month: MonthKey, id: string, amount: Cents | null): Plan {
+  const actuals = { ...(plan.actuals ?? {}) }
+  const k = paidKey(month, id)
+  if (amount === null) delete actuals[k]
+  else actuals[k] = Math.max(0, Math.round(amount))
+  return { ...plan, actuals }
 }
 
 /** Premier mois de la projection = mois de la date du capital de départ. */
@@ -82,14 +110,19 @@ export function project(
   // Index des lignes par mois
   const lines = new Map<MonthKey, FlowLine[]>()
   const markers = new Map<MonthKey, string[]>()
+  const actuals = plan.actuals ?? {}
   const push = (m: MonthKey, l: FlowLine) => {
     if (m < start || m > end) return
+    const real = actuals[paidKey(m, l.sourceId)]
+    if (real !== undefined && real !== Math.abs(l.amount)) {
+      l = { ...l, planned: l.amount, amount: l.amount < 0 ? -real : real }
+    }
     const arr = lines.get(m)
     if (arr) arr.push(l)
     else lines.set(m, [l])
   }
-  const pointed = settledIds(plan)
-  const settled = (m: MonthKey, id: string) => m === start && pointed.has(id)
+  const pointed = paidKeys(plan)
+  const settled = (m: MonthKey, id: string) => pointed.has(paidKey(m, id))
 
   for (let i = 0; i < count; i++) {
     const m = addMonths(start, i)

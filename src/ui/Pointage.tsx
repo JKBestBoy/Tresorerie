@@ -3,7 +3,7 @@ import { RefreshCcw } from 'lucide-react'
 import { todayISO } from '../domain/defaults'
 import { formatEuros } from '../domain/money'
 import { monthLabel } from '../domain/month'
-import { startMonthOf } from '../domain/projection'
+import { startMonthOf, withNewBalance } from '../domain/projection'
 import type { Cents, MonthKey, Plan } from '../domain/types'
 import { MoneyInput } from './inputs'
 
@@ -40,7 +40,7 @@ export function NewMonthCard({
         <button
           type="button"
           onClick={() =>
-            setPlan((p) => ({ ...p, startingCapital: { amount, date: todayISO() }, settled: { month: current, ids: [] } }))
+            setPlan((p) => withNewBalance(p, amount, todayISO()))
           }
           className="shrink-0 rounded-xl bg-accent px-4 font-semibold text-white dark:text-bg"
         >

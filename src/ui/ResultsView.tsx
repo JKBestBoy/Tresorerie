@@ -3,7 +3,8 @@ import { AlertTriangle, Circle, ArrowDownLeft, ArrowUpRight, CalendarClock, Chec
 import { investmentsSummary } from '../domain/investments'
 import type { useQuotes } from '../sync/quotes'
 import { NewMonthCard } from './Pointage'
-import { startMonthOf, toggleSettled } from '../domain/projection'
+import { MoneyInput } from './inputs'
+import { setActual, startMonthOf, toggleSettled } from '../domain/projection'
 import { cushionReport, freeToSpend } from '../domain/analysis'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
@@ -35,9 +36,10 @@ export function ResultsView({
   const report = cushionReport(rows, plan.safetyCushion)
   const overdraft = cushionReport(rows, 0)
   const thisMonth = rows.find((r) => r.month === current) ?? rows[0]
-  // Seul le mois en cours (celui du dernier solde saisi) peut être pointé
-  const pointable = current === startMonthOf(plan) ? current : null
-  const toggle = (id: string) => setPlan((p) => toggleSettled(p, id))
+  // Pointage : tous les mois de la projection sont cochables (paiement en avance compris)
+  const start = startMonthOf(plan)
+  const toggle = (month: string, id: string) => setPlan((p) => toggleSettled(p, month, id))
+  const setAmount = (month: string, id: string, amount: Cents | null) => setPlan((p) => setActual(p, month, id, amount))
   const last = rows[rows.length - 1]
   const hasData =
     plan.startingCapital.amount !== 0 ||
@@ -164,12 +166,11 @@ export function ResultsView({
           <h2 className="text-sm font-bold text-muted">Mois par mois</h2>
           <p className="text-xs text-muted">Reste = entrées − sorties du mois</p>
         </div>
-        {current === startMonthOf(plan) && (
-          <p className="mb-2 px-1 text-xs text-muted">
-            Cochez dans {monthLabel(current).split(' ')[0]} ce qui est déjà passé sur votre compte depuis votre solde du{' '}
-            {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))}.
-          </p>
-        )}
+        <p className="mb-2 px-1 text-xs text-muted">
+          Cochez ce qui est déjà passé sur votre compte depuis votre solde du{' '}
+          {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))}
+          , y compris ce que vous avez payé en avance.
+        </p>
         {/* Téléphone : une carte par mois */}
         <div className="space-y-2.5 lg:hidden">
           {rows.map((r) => (
@@ -178,12 +179,14 @@ export function ResultsView({
               row={r}
               cushion={plan.safetyCushion}
               isCurrent={r.month === current}
-              onToggle={r.month === pointable ? toggle : undefined}
+              openAtStart={r.month === start}
+              onToggle={(id) => toggle(r.month, id)}
+              onAmount={(id, a) => setAmount(r.month, id, a)}
             />
           ))}
         </div>
         {/* Grand écran : tableau compact */}
-        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} pointable={pointable} onToggle={toggle} />
+        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} openAtStart={start} onToggle={toggle} onAmount={setAmount} />
       </section>
     </div>
   )
@@ -295,34 +298,94 @@ function Stat({ icon, label, value, tone }: { icon: React.ReactNode; label: stri
 }
 
 /** Lignes du détail d'un mois ; cochables (pointage) pour le mois en cours. */
-function DetailLine({ d, onToggle }: { d: MonthRow['details'][number]; onToggle?: (id: string) => void }) {
-  const content = (
-    <>
-      {onToggle &&
-        (d.settled ? (
+/**
+ * Une ligne du détail d'un mois : le rond coche/décoche (déjà passé sur le compte),
+ * le montant se touche pour saisir le montant réel de ce mois-là.
+ */
+function DetailLine({
+  d,
+  onToggle,
+  onAmount,
+}: {
+  d: MonthRow['details'][number]
+  onToggle: (id: string) => void
+  onAmount: (id: string, amount: Cents | null) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState<Cents>(Math.abs(d.amount))
+  const changed = d.planned !== undefined
+  const color = d.settled ? 'text-muted' : d.amount >= 0 ? 'text-pos' : 'text-neg'
+
+  if (editing) {
+    const done = (amount: Cents | null) => {
+      onAmount(d.sourceId, amount)
+      setEditing(false)
+    }
+    return (
+      <div className="space-y-2 rounded-xl bg-surface p-2.5 ring-1 ring-accent/30">
+        <p className="text-xs font-semibold text-muted">
+          Montant réel de « {d.label || 'Sans nom'} » ce mois-ci
+          {changed && <> (prévu : {formatEuros(Math.abs(d.planned!))})</>}
+        </p>
+        <div
+          className="flex gap-2"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') done(value)
+            if (e.key === 'Escape') setEditing(false)
+          }}
+        >
+          <div className="min-w-0 flex-1">
+            <MoneyInput value={value} onChange={setValue} />
+          </div>
+          <button type="button" onClick={() => done(value)} className="shrink-0 rounded-xl bg-accent px-3.5 text-sm font-semibold text-white dark:text-bg">
+            OK
+          </button>
+        </div>
+        <div className="flex justify-between text-xs">
+          <button type="button" onClick={() => setEditing(false)} className="font-semibold text-muted">
+            Annuler
+          </button>
+          {changed && (
+            <button type="button" onClick={() => done(null)} className="font-semibold text-accent">
+              Remettre le montant prévu
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="-mx-2 flex items-center gap-1 rounded-lg px-1 transition hover:bg-surface">
+      <button
+        type="button"
+        aria-pressed={d.settled}
+        aria-label={`${d.settled ? 'Décocher' : 'Cocher'} ${d.label}`}
+        onClick={() => onToggle(d.sourceId)}
+        className="flex min-w-0 flex-1 items-center gap-3 py-1.5 pl-1 text-left"
+      >
+        {d.settled ? (
           <CheckCircle2 size={19} className="shrink-0 text-pos" />
         ) : (
           <Circle size={19} className="shrink-0 text-muted/50" strokeWidth={2.2} />
-        ))}
-      <span className={`min-w-0 flex-1 truncate ${d.settled ? 'text-muted line-through' : ''}`}>
-        {d.label || 'Sans nom'}
-        {d.settled && !onToggle && ' (déjà passé)'}
-      </span>
-      <span className={`num shrink-0 font-semibold ${d.settled ? 'text-muted line-through' : d.amount >= 0 ? 'text-pos' : 'text-neg'}`}>
-        {signedExact(d.amount)}
-      </span>
-    </>
-  )
-  if (!onToggle) return <div className="flex items-center gap-3 py-1.5">{content}</div>
-  return (
-    <button
-      type="button"
-      aria-pressed={d.settled}
-      onClick={() => onToggle(d.sourceId)}
-      className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-lg px-2 py-1.5 text-left transition hover:bg-surface"
-    >
-      {content}
-    </button>
+        )}
+        <span className={`min-w-0 flex-1 truncate ${d.settled ? 'text-muted line-through' : ''}`}>{d.label || 'Sans nom'}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setValue(Math.abs(d.amount))
+          setEditing(true)
+        }}
+        title="Modifier le montant de ce mois"
+        className="num flex shrink-0 flex-col items-end rounded-md px-1.5 py-1 hover:bg-surface-2"
+      >
+        <span className={`font-semibold ${color} ${d.settled ? 'line-through' : ''} ${changed ? 'underline decoration-dotted underline-offset-4' : ''}`}>
+          {signedExact(d.amount)}
+        </span>
+        {changed && <span className="text-[10px] leading-tight text-muted">prévu {formatEuros(Math.abs(d.planned!))}</span>}
+      </button>
+    </div>
   )
 }
 
@@ -334,18 +397,23 @@ function MonthCard({
   row: r,
   cushion,
   isCurrent,
+  openAtStart,
   onToggle,
+  onAmount,
 }: {
   row: MonthRow
   cushion: Cents
   isCurrent: boolean
-  onToggle?: (id: string) => void
+  openAtStart: boolean
+  onToggle: (id: string) => void
+  onAmount: (id: string, amount: Cents | null) => void
 }) {
+  const [initiallyOpen] = useState(openAtStart)
   const overdrawn = r.closing < 0
   const below = !overdrawn && r.closing < cushion
   return (
     <details
-      open={onToggle ? true : undefined}
+      open={initiallyOpen || undefined}
       className={`group rounded-3xl bg-surface ring-1 transition ${
         overdrawn ? 'ring-neg/50' : below ? 'ring-warn/40' : isCurrent ? 'ring-accent/40' : 'ring-line'
       }`}
@@ -355,7 +423,7 @@ function MonthCard({
           <div className="flex min-w-0 items-center gap-2">
             <p className="font-bold">{cap(monthLabel(r.month))}</p>
             {isCurrent && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-ink">Ce mois-ci</span>}
-            {onToggle && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
+            {r.details.some((d) => d.settled) && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
             {overdrawn && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Découvert</span>}
             {below && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Sous le matelas</span>}
           </div>
@@ -387,7 +455,7 @@ function MonthCard({
           </li>
           {r.details.map((d, i) => (
             <li key={i} className="py-0.5">
-              <DetailLine d={d} onToggle={onToggle} />
+              <DetailLine d={d} onToggle={onToggle} onAmount={onAmount} />
             </li>
           ))}
         </ul>
@@ -400,16 +468,18 @@ function MonthTable({
   rows,
   cushion,
   current,
-  pointable,
+  openAtStart,
   onToggle,
+  onAmount,
 }: {
   rows: MonthRow[]
   cushion: Cents
   current: string
-  pointable: string | null
-  onToggle: (id: string) => void
+  openAtStart: string
+  onToggle: (month: string, id: string) => void
+  onAmount: (month: string, id: string, amount: Cents | null) => void
 }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set(pointable ? [pointable] : []))
+  const [open, setOpen] = useState<Set<string>>(() => new Set([openAtStart]))
   const toggle = (m: string) =>
     setOpen((prev) => {
       const next = new Set(prev)
@@ -447,7 +517,7 @@ function MonthTable({
                   <td className="py-2.5 pl-5 pr-2">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-semibold">{cap(monthLabel(r.month))}</span>
-                      {r.month === pointable && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
+                      {r.details.some((d) => d.settled) && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
                       {overdrawn && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Découvert</span>}
                       {below && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Sous le matelas</span>}
                       {r.plannedMarkers.map((m, i) => (
@@ -477,7 +547,7 @@ function MonthTable({
                         </li>
                         {r.details.map((d, i) => (
                           <li key={i}>
-                            <DetailLine d={d} onToggle={r.month === pointable ? onToggle : undefined} />
+                            <DetailLine d={d} onToggle={(id) => onToggle(r.month, id)} onAmount={(id, a) => onAmount(r.month, id, a)} />
                           </li>
                         ))}
                       </ul>
