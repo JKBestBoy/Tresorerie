@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addMonths, monthDiff } from './month'
 import { parseEuros } from './money'
-import { paidKeys, project, setActual, splitInstallments, toggleSettled, withNewBalance } from './projection'
+import { paidKeys, project, setActual, setOpening, splitInstallments, toggleSettled, withNewBalance } from './projection'
 import { cushionReport, freeToSpend, whatIf } from './analysis'
 import type { Plan } from './types'
 
@@ -128,6 +128,20 @@ describe('projection', () => {
     expect(rows[1].details[0]).toMatchObject({ amount: -8700, planned: -10000 })
     // Remettre le prévu
     expect(project(setActual(p2, '2026-12', 'c', null), [], NOW)[1].outflows).toBe(10000)
+  })
+
+  it('solde de début modifiable : la projection repart du solde saisi', () => {
+    const p = plan({ fixedExpenses: [{ id: 'c', label: 'Courses', monthlyAmount: 10000, startMonth: null, endMonth: null }] })
+    // Départ 1 000 € ; on constate 950 € au début de janvier (prévu : 800 €)
+    const p2 = setOpening(p, '2027-01', 95000)
+    const rows = project(p2, [], NOW)
+    expect(rows[2]).toMatchObject({ month: '2027-01', opening: 95000, plannedOpening: 80000, closing: 85000 })
+    expect(rows[3].opening).toBe(85000)
+    expect(rows[1].plannedOpening).toBeUndefined()
+    // Revenir au calcul
+    expect(project(setOpening(p2, '2027-01', null), [], NOW)[2].opening).toBe(80000)
+    // Mois de départ = solde de départ
+    expect(setOpening(p, '2026-11', 50000).startingCapital.amount).toBe(50000)
   })
 
   it('nouveau solde : ce qui était coché à l’avance reste coché, les mois passés disparaissent', () => {

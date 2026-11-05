@@ -103,6 +103,11 @@ export interface Plan {
    * quand il diffère du montant prévu (ex : courses moins chères que prévu ce mois-ci).
    */
   actuals?: Record<string, Cents>
+  /**
+   * Solde réel constaté au début d'un mois (autre que le mois de départ, dont le solde
+   * est `startingCapital`). La projection repart de ce montant à partir de ce mois.
+   */
+  openings?: Record<MonthKey, Cents>
   /** Ancien réglage (part des investissements comptée dans la sécurité) : n'est plus utilisé. */
   investmentsCountedPct?: number
 }
@@ -124,6 +129,8 @@ export interface FlowLine {
 export interface MonthRow {
   month: MonthKey
   opening: Cents
+  /** Solde de début prévu par le calcul, quand il a été remplacé par un solde saisi */
+  plannedOpening?: Cents
   incomes: Cents
   outflows: Cents // positif
   /** Reste du mois = entrées - sorties (peut être négatif) */

@@ -4,7 +4,7 @@ import { investmentsSummary } from '../domain/investments'
 import type { useQuotes } from '../sync/quotes'
 import { NewMonthCard } from './Pointage'
 import { MoneyInput } from './inputs'
-import { setActual, startMonthOf, toggleSettled } from '../domain/projection'
+import { setActual, setOpening, startMonthOf, toggleSettled } from '../domain/projection'
 import { cushionReport, freeToSpend } from '../domain/analysis'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
@@ -40,6 +40,7 @@ export function ResultsView({
   const start = startMonthOf(plan)
   const toggle = (month: string, id: string) => setPlan((p) => toggleSettled(p, month, id))
   const setAmount = (month: string, id: string, amount: Cents | null) => setPlan((p) => setActual(p, month, id, amount))
+  const setOpeningOf = (month: string, amount: Cents | null) => setPlan((p) => setOpening(p, month, amount))
   const last = rows[rows.length - 1]
   const hasData =
     plan.startingCapital.amount !== 0 ||
@@ -182,11 +183,12 @@ export function ResultsView({
               openAtStart={r.month === start}
               onToggle={(id) => toggle(r.month, id)}
               onAmount={(id, a) => setAmount(r.month, id, a)}
+              onOpening={(a) => setOpeningOf(r.month, a)}
             />
           ))}
         </div>
         {/* Grand écran : tableau compact */}
-        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} openAtStart={start} onToggle={toggle} onAmount={setAmount} />
+        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} openAtStart={start} onToggle={toggle} onAmount={setAmount} onOpening={setOpeningOf} />
       </section>
     </div>
   )
@@ -389,6 +391,72 @@ function DetailLine({
   )
 }
 
+/** « Solde début de mois », modifiable : solde réel constaté au début du mois. */
+function OpeningLine({ row: r, isStart, onOpening }: { row: MonthRow; isStart: boolean; onOpening: (amount: Cents | null) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState<Cents>(r.opening)
+  const changed = r.plannedOpening !== undefined
+
+  if (editing) {
+    const done = (amount: Cents | null) => {
+      onOpening(amount)
+      setEditing(false)
+    }
+    return (
+      <div className="my-1.5 space-y-2 rounded-xl bg-surface p-2.5 ring-1 ring-accent/30">
+        <p className="text-xs font-semibold text-muted">
+          {isStart ? 'Solde de vos comptes (solde de départ)' : 'Solde réel de vos comptes au début du mois'}
+          {changed && <> (calculé : {formatEuros(r.plannedOpening!)})</>}
+        </p>
+        <div
+          className="flex gap-2"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') done(value)
+            if (e.key === 'Escape') setEditing(false)
+          }}
+        >
+          <div className="min-w-0 flex-1">
+            <MoneyInput value={value} onChange={setValue} />
+          </div>
+          <button type="button" onClick={() => done(value)} className="shrink-0 rounded-xl bg-accent px-3.5 text-sm font-semibold text-white dark:text-bg">
+            OK
+          </button>
+        </div>
+        <div className="flex justify-between text-xs">
+          <button type="button" onClick={() => setEditing(false)} className="font-semibold text-muted">
+            Annuler
+          </button>
+          {changed && (
+            <button type="button" onClick={() => done(null)} className="font-semibold text-accent">
+              Revenir au solde calculé
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setValue(r.opening)
+        setEditing(true)
+      }}
+      title="Modifier le solde de début de mois"
+      className="-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-muted transition hover:bg-surface"
+    >
+      <span>Solde début de mois</span>
+      <span className="num flex flex-col items-end">
+        <span className={`font-semibold ${changed ? 'text-ink underline decoration-dotted underline-offset-4' : ''} ${r.opening < 0 ? 'text-neg' : ''}`}>
+          {formatEuros(r.opening)}
+        </span>
+        {changed && <span className="text-[10px] leading-tight">calculé {formatEuros(r.plannedOpening!)}</span>}
+      </span>
+    </button>
+  )
+}
+
 function settledCount(r: MonthRow) {
   return `${r.details.filter((d) => d.settled).length}/${r.details.length} passé${r.details.filter((d) => d.settled).length > 1 ? 's' : ''}`
 }
@@ -400,6 +468,7 @@ function MonthCard({
   openAtStart,
   onToggle,
   onAmount,
+  onOpening,
 }: {
   row: MonthRow
   cushion: Cents
@@ -407,6 +476,7 @@ function MonthCard({
   openAtStart: boolean
   onToggle: (id: string) => void
   onAmount: (id: string, amount: Cents | null) => void
+  onOpening: (amount: Cents | null) => void
 }) {
   const [initiallyOpen] = useState(openAtStart)
   const overdrawn = r.closing < 0
@@ -449,9 +519,8 @@ function MonthCard({
       </summary>
       {r.details.length > 0 && (
         <ul className="mx-4 mb-4 divide-y divide-line rounded-2xl bg-surface-2 px-3 text-sm">
-          <li className="flex justify-between py-2 text-muted">
-            <span>Solde début de mois</span>
-            <span className="num">{eur(r.opening)}</span>
+          <li>
+            <OpeningLine row={r} isStart={openAtStart} onOpening={onOpening} />
           </li>
           {r.details.map((d, i) => (
             <li key={i} className="py-0.5">
@@ -471,6 +540,7 @@ function MonthTable({
   openAtStart,
   onToggle,
   onAmount,
+  onOpening,
 }: {
   rows: MonthRow[]
   cushion: Cents
@@ -478,6 +548,7 @@ function MonthTable({
   openAtStart: string
   onToggle: (month: string, id: string) => void
   onAmount: (month: string, id: string, amount: Cents | null) => void
+  onOpening: (month: string, amount: Cents | null) => void
 }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set([openAtStart]))
   const toggle = (m: string) =>
@@ -541,9 +612,8 @@ function MonthTable({
                   <tr className="border-b border-line/70 bg-surface-2/60">
                     <td colSpan={6} className="px-5 py-3">
                       <ul className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
-                        <li className="flex justify-between text-muted">
-                          <span>Solde début de mois</span>
-                          <span className="num">{eur(r.opening)}</span>
+                        <li className="-my-0.5">
+                          <OpeningLine row={r} isStart={r.month === openAtStart} onOpening={(a) => onOpening(r.month, a)} />
                         </li>
                         {r.details.map((d, i) => (
                           <li key={i}>

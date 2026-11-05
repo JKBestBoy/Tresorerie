@@ -79,6 +79,25 @@ export function setActual(plan: Plan, month: MonthKey, id: string, amount: Cents
   return { ...plan, actuals }
 }
 
+/** Solde de fin du dernier mois calculé (= solde de début prévu du mois suivant). */
+function row0Balance(rows: MonthRow[]): Cents {
+  return rows[rows.length - 1].closing
+}
+
+/**
+ * Modifie le solde de début d'un mois. Pour le mois de départ, c'est le solde de départ ;
+ * pour les autres, un solde constaté (`null` = revenir au solde calculé).
+ */
+export function setOpening(plan: Plan, month: MonthKey, amount: Cents | null): Plan {
+  if (month === startMonthOf(plan)) {
+    return amount === null ? plan : { ...plan, startingCapital: { ...plan.startingCapital, amount } }
+  }
+  const openings = { ...(plan.openings ?? {}) }
+  if (amount === null) delete openings[month]
+  else openings[month] = Math.round(amount)
+  return { ...plan, openings }
+}
+
 /** Premier mois de la projection = mois de la date du capital de départ. */
 export function startMonthOf(plan: Plan): MonthKey {
   return monthOf(plan.startingCapital.date)
@@ -191,11 +210,13 @@ export function project(
       if (l.amount >= 0) incomes += l.amount
       else outflows += -l.amount
     }
-    const opening = balance
+    const typed = i > 0 ? plan.openings?.[m] : undefined
+    const opening = typed ?? balance
     balance = opening + incomes - outflows
     rows.push({
       month: m,
       opening,
+      ...(typed !== undefined && typed !== row0Balance(rows) ? { plannedOpening: row0Balance(rows) } : {}),
       incomes,
       outflows,
       net: incomes - outflows,
