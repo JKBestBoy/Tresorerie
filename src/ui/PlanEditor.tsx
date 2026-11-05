@@ -58,9 +58,9 @@ export function PlanEditor({
     .reduce((s, f) => s + f.monthlyAmount, 0)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0">
       {isEmpty && (
-        <div className="rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 p-5 text-white shadow-lg shadow-indigo-500/20">
+        <div className="rounded-3xl lg:col-span-2 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 p-5 text-white shadow-lg shadow-indigo-500/20">
           <Sparkles size={22} className="mb-2 opacity-90" />
           <p className="text-lg font-bold">Bienvenue !</p>
           <p className="mt-1 text-sm text-white/85">Remplissez les blocs ci-dessous de haut en bas, puis appuyez sur « Enregistrer ».</p>
@@ -74,6 +74,8 @@ export function PlanEditor({
         </div>
       )}
 
+      {/* Colonne gauche (grand écran) : ce que j'ai et ce qui rentre */}
+      <div className="space-y-4 lg:space-y-5">
       <Section icon={Landmark} tone="indigo" title="Liquidités" subtitle="Ce que vous avez aujourd’hui sur vos comptes courants (hors investissements)">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Solde de mes comptes">
@@ -179,6 +181,10 @@ export function PlanEditor({
         <AddButton onClick={() => add('oneOffIncomes', newOneOffIncome(plan))}>Ajouter une rentrée</AddButton>
       </Section>
 
+      </div>
+
+      {/* Colonne droite (grand écran) : ce qui sort et le matelas */}
+      <div className="space-y-4 lg:space-y-5">
       <Section
         icon={Home}
         tone="rose"
@@ -265,7 +271,9 @@ export function PlanEditor({
         </div>
       </Section>
 
-      <div className="pt-4 text-center">
+      </div>
+
+      <div className="pt-4 text-center lg:col-span-2">
         {confirmReset ? (
           <div className="space-x-3 text-sm">
             <span>Tout effacer définitivement ?</span>

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, PencilLine, RefreshCw, TrendingUp } from 'lucide-react'
 import { investmentsSummary } from '../domain/investments'
 import type { useQuotes } from '../sync/quotes'
@@ -47,7 +47,8 @@ export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => 
   const freeRounded = Math.floor(free.amount / 100) * 100
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-6 lg:space-y-0">
+      <div className="space-y-4">
       {/* Carte principale */}
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 p-5 text-white shadow-xl shadow-indigo-600/25">
         <div className="pointer-events-none absolute -right-10 -top-12 h-44 w-44 rounded-full bg-white/10" />
@@ -136,17 +137,22 @@ export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => 
         </div>
       </section>
 
+      </div>
+
       {/* Mois par mois */}
       <section>
         <div className="mb-2 flex items-baseline justify-between px-1">
           <h2 className="text-sm font-bold text-muted">Mois par mois</h2>
           <p className="text-xs text-muted">Reste = entrées − sorties du mois</p>
         </div>
-        <div className="space-y-2.5">
+        {/* Téléphone : une carte par mois */}
+        <div className="space-y-2.5 lg:hidden">
           {rows.map((r) => (
             <MonthCard key={r.month} row={r} cushion={plan.safetyCushion} isCurrent={r.month === current} />
           ))}
         </div>
+        {/* Grand écran : tableau compact */}
+        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} />
       </section>
     </div>
   )
@@ -314,6 +320,96 @@ function MonthCard({ row: r, cushion, isCurrent }: { row: MonthRow; cushion: Cen
         </ul>
       )}
     </details>
+  )
+}
+
+function MonthTable({ rows, cushion, current }: { rows: MonthRow[]; cushion: Cents; current: string }) {
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const toggle = (m: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev)
+      if (next.has(m)) next.delete(m)
+      else next.add(m)
+      return next
+    })
+  const amountCls = (c: Cents) => (c > 0 ? 'text-pos' : c < 0 ? 'text-neg' : 'text-muted')
+  return (
+    <div className="hidden overflow-hidden rounded-3xl bg-surface ring-1 ring-line lg:block">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-line text-left text-xs font-semibold text-muted">
+            <th className="py-3 pl-5 pr-2">Mois</th>
+            <th className="px-2 py-3 text-right">Entrées</th>
+            <th className="px-2 py-3 text-right">Sorties</th>
+            <th className="px-2 py-3 text-right">Reste</th>
+            <th className="px-2 py-3 text-right">Solde fin</th>
+            <th className="w-10 py-3 pr-4" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const overdrawn = r.closing < 0
+            const below = !overdrawn && r.closing < cushion
+            const isOpen = open.has(r.month)
+            return (
+              <Fragment key={r.month}>
+                <tr
+                  onClick={() => toggle(r.month)}
+                  className={`cursor-pointer border-b border-line/70 transition hover:bg-surface-2 ${
+                    r.month === current ? 'bg-accent-soft/50' : ''
+                  }`}
+                >
+                  <td className="py-2.5 pl-5 pr-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-semibold">{cap(monthLabel(r.month))}</span>
+                      {overdrawn && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Découvert</span>}
+                      {below && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Sous le matelas</span>}
+                      {r.plannedMarkers.map((m, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">
+                          <CalendarClock size={11} /> {m}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className={`num px-2 py-2.5 text-right font-medium ${amountCls(r.incomes)}`}>{signed(r.incomes)}</td>
+                  <td className={`num px-2 py-2.5 text-right font-medium ${amountCls(-r.outflows)}`}>{signed(-r.outflows)}</td>
+                  <td className={`num px-2 py-2.5 text-right font-bold ${amountCls(r.net)}`}>{signed(r.net)}</td>
+                  <td className={`num px-2 py-2.5 text-right text-base font-extrabold ${overdrawn ? 'text-neg' : below ? 'text-warn' : ''}`}>
+                    {eur(r.closing)}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right">
+                    <ChevronDown size={16} className={`inline text-muted transition ${isOpen ? 'rotate-180' : ''}`} />
+                  </td>
+                </tr>
+                {isOpen && (
+                  <tr className="border-b border-line/70 bg-surface-2/60">
+                    <td colSpan={6} className="px-5 py-3">
+                      <ul className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
+                        <li className="flex justify-between text-muted">
+                          <span>Solde début de mois</span>
+                          <span className="num">{eur(r.opening)}</span>
+                        </li>
+                        {r.details.map((d, i) => (
+                          <li key={i} className={`flex justify-between gap-3 ${d.settled ? 'text-muted line-through' : ''}`}>
+                            <span className="truncate">
+                              {d.label || 'Sans nom'}
+                              {d.settled && ' (déjà passé)'}
+                            </span>
+                            <span className={`num shrink-0 font-semibold ${d.settled ? '' : d.amount >= 0 ? 'text-pos' : 'text-neg'}`}>
+                              {signedExact(d.amount)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

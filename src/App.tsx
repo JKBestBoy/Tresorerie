@@ -53,6 +53,11 @@ function StatusPill({ status, dirty, online }: { status: SyncStatus; dirty: bool
   return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cls}`}>{icon}{text}</span>
 }
 
+const TABS = [
+  ['results', BarChart3, 'Résultats'],
+  ['data', PencilLine, 'Mes données'],
+] as const
+
 const THEMES: [ThemeChoice, string, typeof Sun][] = [
   ['light', 'Clair', Sun],
   ['dark', 'Sombre', Moon],
@@ -105,9 +110,9 @@ function Main({
   }
 
   return (
-    <div className="min-h-dvh pb-44">
+    <div className="min-h-dvh pb-44 lg:pb-28">
       <header className="sticky top-0 z-20 bg-bg/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 py-3">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 py-3 lg:max-w-6xl lg:px-8">
           <div className="flex items-center gap-2.5">
             <Logo />
             <div>
@@ -115,6 +120,22 @@ function Main({
               <StatusPill status={status} dirty={dirty} online={online} />
             </div>
           </div>
+          {/* Onglets dans l'en-tête sur grand écran */}
+          <nav className="hidden gap-1 rounded-full bg-surface p-1.5 ring-1 ring-line lg:flex">
+            {TABS.map(([key, Icon, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key)}
+                className={`flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition ${
+                  tab === key ? 'bg-accent text-white shadow-md dark:text-bg' : 'text-muted hover:text-ink'
+                }`}
+              >
+                <Icon size={17} />
+                {label}
+              </button>
+            ))}
+          </nav>
           <div className="relative" ref={menuRef}>
             <button
               type="button"
@@ -160,7 +181,7 @@ function Main({
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 pt-2">
+      <main className="mx-auto max-w-3xl px-4 pt-2 lg:max-w-6xl lg:px-8 lg:pt-4">
         {message && (
           <div className="mb-4 flex items-start justify-between gap-2 rounded-2xl bg-warn-soft p-3 text-sm text-warn ring-1 ring-warn/20">
             <span>{message}</span>
@@ -199,13 +220,8 @@ function Main({
               </button>
             </div>
           )}
-          <nav className="grid grid-cols-2 gap-1 rounded-full bg-surface/90 p-1.5 shadow-xl ring-1 ring-line backdrop-blur-xl">
-            {(
-              [
-                ['results', BarChart3, 'Résultats'],
-                ['data', PencilLine, 'Mes données'],
-              ] as const
-            ).map(([key, Icon, label]) => (
+          <nav className="grid grid-cols-2 gap-1 rounded-full bg-surface/90 p-1.5 shadow-xl ring-1 ring-line backdrop-blur-xl lg:hidden">
+            {TABS.map(([key, Icon, label]) => (
               <button
                 key={key}
                 type="button"
