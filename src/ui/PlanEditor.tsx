@@ -9,7 +9,7 @@ import {
   touchesStartMonth,
 } from '../domain/defaults'
 import { formatEuros } from '../domain/money'
-import { addMonths, monthLabel, monthOf } from '../domain/month'
+import { addMonths, monthLabel, monthOf, monthShortLabel } from '../domain/month'
 import { installmentAmounts, installmentSchedule, splitInstallments, startMonthOf } from '../domain/projection'
 import { samplePlan } from '../domain/sample'
 import type { Quotes } from '../domain/investments'
@@ -105,7 +105,14 @@ export function PlanEditor({
         total={plan.incomePeriods.length ? `${plan.incomePeriods.length} ligne(s)` : undefined}
       >
         {plan.incomePeriods.map((it) => (
-          <ItemCard key={it.id} onDelete={() => remove('incomePeriods', it.id)}>
+          <ItemCard
+            key={it.id}
+            onDelete={() => remove('incomePeriods', it.id)}
+            title={it.label}
+            detail={periodText(it.startMonth, it.endMonth)}
+            amount={`${formatEuros(it.monthlyAmount, { round: it.monthlyAmount % 100 === 0 })}/mois`}
+            isNew={!it.label && !it.monthlyAmount}
+          >
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Nom">
                 <TextInput value={it.label} placeholder="Salaire" onChange={(label) => update('incomePeriods', it.id, { label })} />
@@ -139,10 +146,16 @@ export function PlanEditor({
         title="Rentrées ponctuelles"
         subtitle="Prime, remboursement, vente…"
         total={plan.oneOffIncomes.length ? `${plan.oneOffIncomes.length} ligne(s)` : undefined}
-        defaultOpen={plan.oneOffIncomes.length > 0}
       >
         {plan.oneOffIncomes.map((it) => (
-          <ItemCard key={it.id} onDelete={() => remove('oneOffIncomes', it.id)}>
+          <ItemCard
+            key={it.id}
+            onDelete={() => remove('oneOffIncomes', it.id)}
+            title={it.label}
+            detail={monthLabel(it.month)}
+            amount={formatEuros(it.amount, { round: it.amount % 100 === 0 })}
+            isNew={!it.label && !it.amount}
+          >
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Nom">
                 <TextInput value={it.label} placeholder="Prime" onChange={(label) => update('oneOffIncomes', it.id, { label })} />
@@ -174,7 +187,14 @@ export function PlanEditor({
         total={plan.fixedExpenses.length ? `${formatEuros(fixedTotal, { round: true })}/mois` : undefined}
       >
         {plan.fixedExpenses.map((it) => (
-          <ItemCard key={it.id} onDelete={() => remove('fixedExpenses', it.id)}>
+          <ItemCard
+            key={it.id}
+            onDelete={() => remove('fixedExpenses', it.id)}
+            title={it.label}
+            detail={it.startMonth || it.endMonth ? periodText(it.startMonth, it.endMonth) : undefined}
+            amount={`${formatEuros(it.monthlyAmount, { round: it.monthlyAmount % 100 === 0 })}/mois`}
+            isNew={!it.label && !it.monthlyAmount}
+          >
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Nom">
                 <TextInput value={it.label} placeholder="Loyer" onChange={(label) => update('fixedExpenses', it.id, { label })} />
@@ -273,6 +293,16 @@ export function PlanEditor({
   )
 }
 
+/** "de déc. 2026 à août 2027", "jusqu'en août 2027", "dès déc. 2026" ou "" */
+function periodText(start: string | null, end: string | null): string {
+  const s = start ? monthShortLabel(start) : null
+  const e = end ? monthShortLabel(end) : null
+  if (s && e) return `de ${s} à ${e}`
+  if (e) return `jusqu’en ${e}`
+  if (s) return `dès ${s}`
+  return 'tous les mois'
+}
+
 const INSTALLMENT_CHOICES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 18, 24, 36, 48]
 
 function PlannedExpenseCard({
@@ -333,7 +363,17 @@ function PlannedExpenseCard({
   }
 
   return (
-    <ItemCard onDelete={onDelete}>
+    <ItemCard
+      onDelete={onDelete}
+      title={it.label}
+      detail={
+        schedule.length > 1
+          ? `En ${schedule.length} fois · ${monthShortLabel(schedule[0].month)} → ${monthShortLabel(schedule[schedule.length - 1].month)}`
+          : monthLabel(it.month)
+      }
+      amount={formatEuros(sum(parts), { round: sum(parts) % 100 === 0 })}
+      isNew={!it.label && !it.totalAmount && !it.customAmounts}
+    >
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Nom">
           <TextInput value={it.label} placeholder="Vacances" onChange={(label) => onChange({ label })} />

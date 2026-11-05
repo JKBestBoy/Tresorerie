@@ -123,7 +123,15 @@ function InvestmentCard({
   const [searching, setSearching] = useState(live && !inv.symbol)
 
   return (
-    <ItemCard onDelete={onDelete}>
+    <ItemCard
+      onDelete={onDelete}
+      title={inv.label || inv.symbol}
+      detail={[inv.account, inv.kind !== 'fixed' && inv.symbol ? `${String(inv.quantity).replace('.', ',')} × ${inv.symbol}` : null]
+        .filter(Boolean)
+        .join(' · ')}
+      amount={formatEuros(v.value, { round: true })}
+      isNew={!inv.label && !inv.symbol && !inv.quantity}
+    >
       <div className="grid grid-cols-3 gap-1 rounded-2xl bg-surface p-1 ring-1 ring-line">
         {KINDS.map(([k, label, Icon]) => (
           <button
@@ -228,7 +236,6 @@ export function InvestmentsSection({
       title="Investissements"
       subtitle="Crypto, actions, ETF… valeur mise à jour en direct"
       total={list.length ? formatEuros(total, { round: true }) : undefined}
-      defaultOpen={list.length > 0}
     >
       {list.map((inv) => (
         <InvestmentCard

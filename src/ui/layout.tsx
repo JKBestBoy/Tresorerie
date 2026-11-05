@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ChevronDown, Plus, Trash2, type LucideIcon } from 'lucide-react'
 
 export const TONES = {
@@ -17,7 +17,7 @@ export function Section({
   icon: Icon,
   tone,
   children,
-  defaultOpen = true,
+  defaultOpen = false,
 }: {
   title: string
   subtitle?: string
@@ -28,7 +28,7 @@ export function Section({
   defaultOpen?: boolean
 }) {
   return (
-    <details open={defaultOpen} className="group rounded-3xl bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(30_27_75/0.12)] ring-1 ring-line">
+    <details open={defaultOpen || undefined} className="group rounded-3xl bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(30_27_75/0.12)] ring-1 ring-line">
       <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
         <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${TONES[tone]}`}>
           <Icon size={22} strokeWidth={2} />
@@ -45,9 +45,38 @@ export function Section({
   )
 }
 
-export function ItemCard({ onDelete, children }: { onDelete: () => void; children: ReactNode }) {
+/**
+ * Ligne d'une liste (un revenu, une dépense…) : fermée, elle n'affiche qu'un résumé ;
+ * on la touche pour la modifier. Une ligne toute neuve s'ouvre d'elle-même.
+ */
+export function ItemCard({
+  onDelete,
+  children,
+  title,
+  detail,
+  amount,
+  isNew,
+}: {
+  onDelete: () => void
+  children: ReactNode
+  title: string
+  detail?: string
+  amount?: string
+  isNew?: boolean
+}) {
+  // Décidé une seule fois : une ligne neuve reste ouverte pendant qu'on la remplit.
+  const [openAtStart] = useState(!!isNew)
   return (
-    <div className="relative space-y-3 rounded-2xl bg-surface-2 p-3.5">
+    <details open={openAtStart || undefined} className="group/item rounded-2xl bg-surface-2">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-3">
+        <div className="min-w-0 flex-1">
+          <p className={`truncate text-sm font-semibold ${title ? '' : 'text-muted'}`}>{title || 'Sans nom'}</p>
+          {detail && <p className="truncate text-xs text-muted">{detail}</p>}
+        </div>
+        {amount && <span className="num shrink-0 text-sm font-bold">{amount}</span>}
+        <ChevronDown size={16} className="shrink-0 text-muted transition group-open/item:rotate-180" />
+      </summary>
+      <div className="space-y-3 px-3.5 pb-3.5">
       {children}
       <div className="flex justify-end">
         <button
@@ -58,7 +87,8 @@ export function ItemCard({ onDelete, children }: { onDelete: () => void; childre
           <Trash2 size={14} /> Supprimer
         </button>
       </div>
-    </div>
+      </div>
+    </details>
   )
 }
 
