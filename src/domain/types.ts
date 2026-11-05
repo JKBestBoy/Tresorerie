@@ -86,7 +86,7 @@ export interface Plan {
   plannedExpenses: PlannedExpense[]
   /** Investissements (absent sur les plans créés avant leur ajout) */
   investments?: Investment[]
-  /** Part (en %) de la valeur des investissements comptée dans la sécurité. Défaut : 100. */
+  /** Ancien réglage (part des investissements comptée dans la sécurité) : n'est plus utilisé. */
   investmentsCountedPct?: number
 }
 

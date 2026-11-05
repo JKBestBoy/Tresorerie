@@ -46,14 +46,10 @@ export function investmentsSummary(plan: Plan, quotes: Quotes) {
   const lines = (plan.investments ?? []).map((inv) => ({ inv, ...valueOf(inv, quotes) }))
   const total = lines.reduce((s, l) => s + l.value, 0)
   const change = lines.reduce((s, l) => s + l.change, 0)
-  const pct = Math.min(100, Math.max(0, plan.investmentsCountedPct ?? 100))
   return {
     lines,
     total,
     /** Variation du jour, en centimes */
     change,
-    countedPct: pct,
-    /** Part de la valeur comptée dans la sécurité (matelas, montant libre) */
-    counted: Math.round((total * pct) / 100),
   }
 }

@@ -30,15 +30,12 @@ describe('investissements', () => {
     expect(valueOf(cash, quotes)).toMatchObject({ value: 255, source: 'manual' })
   })
 
-  it('total et part comptée dans la sécurité', () => {
-    const plan = { ...emptyPlan(), investments: [btc, etf, cash], investmentsCountedPct: 50 }
-    const s = investmentsSummary(plan, quotes)
-    expect(s.total).toBe(1400000 + 210000 + 255)
-    expect(s.counted).toBe(Math.round(s.total / 2))
-    expect(investmentsSummary({ ...plan, investmentsCountedPct: undefined }, quotes).counted).toBe(s.total)
+  it('total des investissements', () => {
+    const plan = { ...emptyPlan(), investments: [btc, etf, cash] }
+    expect(investmentsSummary(plan, quotes).total).toBe(1400000 + 210000 + 255)
   })
 
   it('plan sans investissements', () => {
-    expect(investmentsSummary(emptyPlan(), quotes)).toMatchObject({ total: 0, counted: 0 })
+    expect(investmentsSummary(emptyPlan(), quotes)).toMatchObject({ total: 0, change: 0 })
   })
 })

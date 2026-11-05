@@ -17,11 +17,11 @@ export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => 
   const rows = useMemo(() => project(plan), [plan])
   const current = monthOf(new Date())
   const inv = investmentsSummary(plan, live.quotes)
-  // Les investissements comptés font partie de la sécurité : le seuil à surveiller
-  // pour les liquidités baisse d'autant.
-  const threshold = plan.safetyCushion - inv.counted
-  const free = freeToSpend(rows, threshold, current)
-  const report = cushionReport(rows, threshold)
+  // « Je peux dépenser », matelas et découvert : calculés sur les liquidités uniquement.
+  // Les placements sont affichés à part (on ne compte pas les vendre pour dépenser).
+  const free = freeToSpend(rows, plan.safetyCushion, current)
+  const report = cushionReport(rows, plan.safetyCushion)
+  const overdraft = cushionReport(rows, 0)
   const thisMonth = rows.find((r) => r.month === current) ?? rows[0]
   const last = rows[rows.length - 1]
   const hasData =
@@ -55,13 +55,8 @@ export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => 
         <p className="relative text-sm font-medium text-white/80">Je peux dépenser librement aujourd’hui</p>
         <p className="num relative mt-1 text-[2.75rem] font-extrabold leading-none tracking-tight">{eur(freeRounded)}</p>
         <p className="relative mt-2 text-sm text-white/80">
-          sans jamais passer sous mon matelas de <span className="num font-semibold text-white">{eur(plan.safetyCushion)}</span>
-          {inv.counted > 0 && (
-            <>
-              {' '}
-              (liquidités + {inv.countedPct === 100 ? 'investissements' : `${inv.countedPct} % des investissements`} au cours du jour)
-            </>
-          )}
+          sur mes liquidités, sans jamais passer sous mon matelas de{' '}
+          <span className="num font-semibold text-white">{eur(plan.safetyCushion)}</span>
         </p>
         {free.alreadyShort > 0 && (
           <p className="relative mt-2 rounded-xl bg-white/15 px-3 py-2 text-sm">
@@ -80,14 +75,37 @@ export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => 
         </div>
       </section>
 
-      {/* Alerte matelas */}
-      {report.firstBreach ? (
-        <section className="flex gap-3 rounded-3xl bg-neg-soft p-4 ring-1 ring-neg/20">
+      {/* Alerte découvert : le compte passe sous 0 € */}
+      {overdraft.firstBreach && (
+        <section className="flex gap-3 rounded-3xl bg-neg-soft p-4 ring-1 ring-neg/25">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-neg/15 text-neg">
             <AlertTriangle size={20} />
           </span>
           <div className="text-sm">
-            <p className="font-bold text-neg">Sous le matelas en {monthLabel(report.firstBreach.month)}</p>
+            <p className="font-bold text-neg">Découvert en {monthLabel(overdraft.firstBreach.month)}</p>
+            <p className="mt-0.5">
+              Votre compte passera à <span className="num font-semibold">−{formatEuros(overdraft.firstBreach.shortfall)}</span>.
+            </p>
+            {overdraft.worstBreach && (
+              <p className="mt-0.5 text-muted">
+                Pour ne jamais être à découvert, il faut faire entrer au moins{' '}
+                <span className="num font-semibold text-ink">{formatEuros(overdraft.worstBreach.shortfall)}</span> avant{' '}
+                {monthLabel(overdraft.firstBreach.month)}
+                {overdraft.worstBreach.month !== overdraft.firstBreach.month && <> (pire mois : {monthLabel(overdraft.worstBreach.month)})</>}.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Alerte matelas */}
+      {report.firstBreach ? (
+        <section className="flex gap-3 rounded-3xl bg-warn-soft p-4 ring-1 ring-warn/25">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-warn/15 text-warn">
+            <AlertTriangle size={20} />
+          </span>
+          <div className="text-sm">
+            <p className="font-bold text-warn">Sous le matelas en {monthLabel(report.firstBreach.month)}</p>
             <p className="mt-0.5">
               Il manquera <span className="num font-semibold">{formatEuros(report.firstBreach.shortfall)}</span>.
             </p>
@@ -103,7 +121,7 @@ export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => 
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-pos/15 text-pos">
             <CheckCircle2 size={20} />
           </span>
-          <p className="text-sm font-semibold">Votre solde reste au-dessus du matelas sur toute la période.</p>
+          <p className="text-sm font-semibold">Vos liquidités restent au-dessus du matelas sur toute la période.</p>
         </section>
       )}
 
@@ -126,7 +144,7 @@ export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => 
         </div>
         <div className="space-y-2.5">
           {rows.map((r) => (
-            <MonthCard key={r.month} row={r} cushion={threshold} isCurrent={r.month === current} />
+            <MonthCard key={r.month} row={r} cushion={plan.safetyCushion} isCurrent={r.month === current} />
           ))}
         </div>
       </section>
@@ -240,20 +258,24 @@ function Stat({ icon, label, value, tone }: { icon: React.ReactNode; label: stri
 }
 
 function MonthCard({ row: r, cushion, isCurrent }: { row: MonthRow; cushion: Cents; isCurrent: boolean }) {
-  const below = r.closing < cushion
+  const overdrawn = r.closing < 0
+  const below = !overdrawn && r.closing < cushion
   return (
     <details
-      className={`group rounded-3xl bg-surface ring-1 transition ${below ? 'ring-neg/40' : isCurrent ? 'ring-accent/40' : 'ring-line'}`}
+      className={`group rounded-3xl bg-surface ring-1 transition ${
+        overdrawn ? 'ring-neg/50' : below ? 'ring-warn/40' : isCurrent ? 'ring-accent/40' : 'ring-line'
+      }`}
     >
       <summary className="cursor-pointer list-none p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <p className="font-bold">{cap(monthLabel(r.month))}</p>
             {isCurrent && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-ink">Ce mois-ci</span>}
-            {below && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Sous le matelas</span>}
+            {overdrawn && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Découvert</span>}
+            {below && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Sous le matelas</span>}
           </div>
           <div className="flex items-center gap-1.5">
-            <p className={`num text-lg font-extrabold ${below ? 'text-neg' : ''}`}>{eur(r.closing)}</p>
+            <p className={`num text-lg font-extrabold ${overdrawn ? 'text-neg' : below ? 'text-warn' : ''}`}>{eur(r.closing)}</p>
             <ChevronDown size={16} className="text-muted transition group-open:rotate-180" />
           </div>
         </div>

@@ -243,22 +243,9 @@ export function InvestmentsSection({
         Ajouter un investissement
       </AddButton>
       {list.length > 0 && (
-        <Field
-          label="Part comptée dans ma sécurité"
-          hint="Quelle part de la valeur de vos investissements compte dans le matelas et le montant « libre aujourd’hui » ?"
-        >
-          <select
-            className={inputClass}
-            value={plan.investmentsCountedPct ?? 100}
-            onChange={(e) => setPlan((p) => ({ ...p, investmentsCountedPct: Number(e.target.value) }))}
-          >
-            <option value={100}>Tout (100 %)</option>
-            <option value={75}>75 %</option>
-            <option value={50}>La moitié (50 %)</option>
-            <option value={25}>25 %</option>
-            <option value={0}>Rien : mes investissements restent à part</option>
-          </select>
-        </Field>
+        <p className="px-1 text-xs text-muted">
+          Vos placements ne comptent pas dans « je peux dépenser » : seules vos liquidités servent à payer vos dépenses.
+        </p>
       )}
     </Section>
   )
