@@ -54,6 +54,22 @@ export interface PlannedExpense extends Settleable {
   customAmounts?: Cents[]
 }
 
+/** Investissement dont la valeur suit un cours (crypto, action, ETF) ou une valeur fixe. */
+export interface Investment {
+  id: string
+  label: string
+  /** Où il est détenu (OKX, PEA…), pour l'affichage */
+  account?: string
+  /** crypto = cours CoinGecko ; security = cours Yahoo Finance ; fixed = valeur saisie à la main */
+  kind: 'crypto' | 'security' | 'fixed'
+  /** Identifiant du cours : id CoinGecko ("bitcoin") ou code Yahoo ("ESE.PA") ; vide pour "fixed" */
+  symbol: string
+  /** Quantité détenue (peut être fractionnaire) ; 1 pour une valeur fixe */
+  quantity: number
+  /** Prix unitaire de secours en centimes (valeur fixe, ou si le cours en direct est indisponible) */
+  manualUnitPrice: Cents
+}
+
 export interface Plan {
   schemaVersion: 1
   startingCapital: { amount: Cents; date: string } // date ISO "2026-11-03"
@@ -63,6 +79,10 @@ export interface Plan {
   oneOffIncomes: OneOffIncome[]
   fixedExpenses: FixedExpense[]
   plannedExpenses: PlannedExpense[]
+  /** Investissements (absent sur les plans créés avant leur ajout) */
+  investments?: Investment[]
+  /** Part (en %) de la valeur des investissements comptée dans la sécurité. Défaut : 100. */
+  investmentsCountedPct?: number
 }
 
 export type FlowKind = 'income' | 'oneOffIncome' | 'fixedExpense' | 'plannedExpense'

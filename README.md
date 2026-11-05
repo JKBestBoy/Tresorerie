@@ -12,3 +12,9 @@ Vite + React + TypeScript + Tailwind + Recharts. Données stockées localement (
 - Projet Supabase `tresorerie` (région Paris). URL et clé publique dans `src/sync/config.ts` (publiques par conception).
 - Table `plans` : une ligne par utilisateur, protégée par des règles RLS (`supabase/migrations/001_plans.sql`).
 - L'app garde une copie locale (IndexedDB) pour fonctionner hors ligne et synchronise à l'enregistrement.
+
+## Investissements et cours en direct
+
+- Section « Investissements » : crypto (cours CoinGecko), actions/ETF (cours Yahoo Finance, convertis en euros), valeur fixe.
+- Les cours passent par la fonction Supabase `quotes` (`supabase/functions/quotes/index.ts`), réservée aux utilisateurs connectés, rafraîchie chaque minute.
+- La part des investissements comptée dans la sécurité (matelas, montant libre) est réglable (100 % par défaut).

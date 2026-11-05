@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, PencilLine } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, PencilLine, RefreshCw, TrendingUp } from 'lucide-react'
+import { investmentsSummary } from '../domain/investments'
+import type { useQuotes } from '../sync/quotes'
 import { cushionReport, freeToSpend } from '../domain/analysis'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
@@ -11,16 +13,21 @@ const signed = (c: Cents) => (c > 0 ? '+' : c < 0 ? '−' : '') + eur(Math.abs(c
 const signedExact = (c: Cents) => (c > 0 ? '+' : c < 0 ? '−' : '') + formatEuros(Math.abs(c))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-export function ResultsView({ plan, onEdit }: { plan: Plan; onEdit: () => void }) {
+export function ResultsView({ plan, onEdit, live }: { plan: Plan; onEdit: () => void; live: ReturnType<typeof useQuotes> }) {
   const rows = useMemo(() => project(plan), [plan])
   const current = monthOf(new Date())
-  const free = freeToSpend(rows, plan.safetyCushion, current)
-  const report = cushionReport(rows, plan.safetyCushion)
+  const inv = investmentsSummary(plan, live.quotes)
+  // Les investissements comptés font partie de la sécurité : le seuil à surveiller
+  // pour les liquidités baisse d'autant.
+  const threshold = plan.safetyCushion - inv.counted
+  const free = freeToSpend(rows, threshold, current)
+  const report = cushionReport(rows, threshold)
   const thisMonth = rows.find((r) => r.month === current) ?? rows[0]
   const last = rows[rows.length - 1]
   const hasData =
     plan.startingCapital.amount !== 0 ||
-    plan.incomePeriods.length + plan.fixedExpenses.length + plan.plannedExpenses.length + plan.oneOffIncomes.length > 0
+    plan.incomePeriods.length + plan.fixedExpenses.length + plan.plannedExpenses.length + plan.oneOffIncomes.length > 0 ||
+    (plan.investments?.length ?? 0) > 0
 
   if (!hasData) {
     return (
@@ -49,6 +56,12 @@ export function ResultsView({ plan, onEdit }: { plan: Plan; onEdit: () => void }
         <p className="num relative mt-1 text-[2.75rem] font-extrabold leading-none tracking-tight">{eur(freeRounded)}</p>
         <p className="relative mt-2 text-sm text-white/80">
           sans jamais passer sous mon matelas de <span className="num font-semibold text-white">{eur(plan.safetyCushion)}</span>
+          {inv.counted > 0 && (
+            <>
+              {' '}
+              (liquidités + {inv.countedPct === 100 ? 'investissements' : `${inv.countedPct} % des investissements`} au cours du jour)
+            </>
+          )}
         </p>
         {free.alreadyShort > 0 && (
           <p className="relative mt-2 rounded-xl bg-white/15 px-3 py-2 text-sm">
@@ -94,6 +107,8 @@ export function ResultsView({ plan, onEdit }: { plan: Plan; onEdit: () => void }
         </section>
       )}
 
+      {inv.lines.length > 0 && <InvestmentsCard summary={inv} cash={thisMonth.opening} live={live} />}
+
       {/* Ce mois-ci */}
       <section>
         <h2 className="mb-2 px-1 text-sm font-bold text-muted">{cap(monthLabel(thisMonth.month))}</h2>
@@ -111,11 +126,105 @@ export function ResultsView({ plan, onEdit }: { plan: Plan; onEdit: () => void }
         </div>
         <div className="space-y-2.5">
           {rows.map((r) => (
-            <MonthCard key={r.month} row={r} cushion={plan.safetyCushion} isCurrent={r.month === current} />
+            <MonthCard key={r.month} row={r} cushion={threshold} isCurrent={r.month === current} />
           ))}
         </div>
       </section>
     </div>
+  )
+}
+
+function timeAgo(d: Date | null): string {
+  if (!d) return 'cours en cache'
+  const s = Math.round((Date.now() - d.getTime()) / 1000)
+  if (s < 60) return 'à l’instant'
+  return `il y a ${Math.round(s / 60)} min`
+}
+
+function InvestmentsCard({
+  summary,
+  cash,
+  live,
+}: {
+  summary: ReturnType<typeof investmentsSummary>
+  cash: Cents
+  live: ReturnType<typeof useQuotes>
+}) {
+  const changePct = summary.total - summary.change > 0 ? (summary.change / (summary.total - summary.change)) * 100 : 0
+  const up = summary.change >= 0
+  return (
+    <section className="rounded-3xl bg-surface ring-1 ring-line">
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-pos/12 text-pos">
+              <TrendingUp size={20} />
+            </span>
+            <div>
+              <p className="text-xs font-medium text-muted">Investissements · en direct</p>
+              <p className="num text-2xl font-extrabold leading-tight">{eur(summary.total)}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => live.refresh()}
+            className="flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1.5 text-[11px] font-semibold text-muted"
+            aria-label="Actualiser les cours"
+          >
+            <RefreshCw size={12} className={live.loading ? 'animate-spin' : ''} />
+            {live.failed && !live.loading ? 'Hors ligne' : timeAgo(live.fetchedAt)}
+          </button>
+        </div>
+        {summary.change !== 0 && (
+          <p className={`num mt-2 text-sm font-semibold ${up ? 'text-pos' : 'text-neg'}`}>
+            {up ? '▲' : '▼'} {signed(summary.change)} ({up ? '+' : ''}
+            {changePct.toFixed(2).replace('.', ',')} %) aujourd’hui
+          </p>
+        )}
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-xl bg-surface-2 px-3 py-2">
+            <p className="text-muted">Liquidités</p>
+            <p className="num mt-0.5 text-[13px] font-semibold">{eur(cash)}</p>
+          </div>
+          <div className="rounded-xl bg-surface-2 px-3 py-2">
+            <p className="text-muted">Patrimoine total</p>
+            <p className="num mt-0.5 text-[13px] font-bold">{eur(cash + summary.total)}</p>
+          </div>
+        </div>
+      </div>
+      <details className="group border-t border-line">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-muted">
+          Détail des {summary.lines.length} lignes
+          <ChevronDown size={16} className="transition group-open:rotate-180" />
+        </summary>
+        <ul className="divide-y divide-line px-4 pb-2">
+          {[...summary.lines]
+            .sort((a, b) => b.value - a.value)
+            .map(({ inv, value, changePct: pct, source }) => (
+              <li key={inv.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{inv.label || inv.symbol || 'Sans nom'}</p>
+                  <p className="truncate text-xs text-muted">
+                    {[inv.account, inv.kind !== 'fixed' ? `${String(inv.quantity).replace('.', ',')} × ${inv.symbol}` : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                    {source === 'manual' && inv.kind !== 'fixed' && ' · cours indisponible'}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="num font-bold">{eur(value)}</p>
+                  {pct !== null && (
+                    <p className={`num text-xs font-semibold ${pct >= 0 ? 'text-pos' : 'text-neg'}`}>
+                      {pct >= 0 ? '+' : ''}
+                      {pct.toFixed(2).replace('.', ',')} %
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
+        </ul>
+      </details>
+    </section>
   )
 }
 

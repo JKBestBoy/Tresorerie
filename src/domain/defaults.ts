@@ -1,6 +1,6 @@
 import { addMonths, monthOf } from './month'
 import { installmentSchedule, startMonthOf } from './projection'
-import type { FixedExpense, IncomePeriod, OneOffIncome, Plan, PlannedExpense } from './types'
+import type { FixedExpense, IncomePeriod, Investment, OneOffIncome, Plan, PlannedExpense } from './types'
 
 export function newId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -33,6 +33,9 @@ export const newIncomePeriod = (): IncomePeriod => ({
 })
 export const newOneOffIncome = (plan: Plan): OneOffIncome => ({
   id: newId(), label: '', amount: 0, month: addMonths(monthOf(new Date()) > startMonthOf(plan) ? monthOf(new Date()) : startMonthOf(plan), 1),
+})
+export const newInvestment = (): Investment => ({
+  id: newId(), label: '', kind: 'crypto', symbol: '', quantity: 0, manualUnitPrice: 0,
 })
 export const newFixedExpense = (): FixedExpense => ({
   id: newId(), label: '', monthlyAmount: 0, startMonth: null, endMonth: null,

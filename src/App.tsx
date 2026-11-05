@@ -10,6 +10,7 @@ import { PlanEditor } from './ui/PlanEditor'
 import { ResultsView } from './ui/ResultsView'
 import { useTheme, type ThemeChoice } from './ui/theme'
 import { usePlan, type SyncStatus } from './usePlan'
+import { useQuotes } from './sync/quotes'
 
 type Tab = 'results' | 'data'
 
@@ -68,6 +69,7 @@ function Main({
   theme: ReturnType<typeof useTheme>
 }) {
   const { plan, setPlan, dirty, save, revert, status, message, dismissMessage } = usePlan(online)
+  const live = useQuotes(plan?.investments)
   const [tab, setTab] = useState<Tab | null>(null)
   const [menu, setMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -167,7 +169,7 @@ function Main({
             </button>
           </div>
         )}
-        {plan && tab === 'data' && <PlanEditor plan={plan} setPlan={setPlan} />}
+        {plan && tab === 'data' && <PlanEditor plan={plan} setPlan={setPlan} quotes={live.quotes} />}
         {plan && tab === 'results' && (
           <>
             {dirty && (
@@ -175,7 +177,7 @@ function Main({
                 Les résultats tiennent compte de vos modifications non enregistrées.
               </p>
             )}
-            <ResultsView plan={plan} onEdit={() => setTab('data')} />
+            <ResultsView plan={plan} onEdit={() => setTab('data')} live={live} />
           </>
         )}
       </main>
