@@ -1,9 +1,9 @@
 import { Fragment, useMemo, useState } from 'react'
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, PencilLine, RefreshCw, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Circle, ArrowDownLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, PencilLine, RefreshCw, TrendingUp } from 'lucide-react'
 import { investmentsSummary } from '../domain/investments'
 import type { useQuotes } from '../sync/quotes'
-import { NewMonthCard, PointageCard } from './Pointage'
-import { startMonthOf } from '../domain/projection'
+import { NewMonthCard } from './Pointage'
+import { startMonthOf, toggleSettled } from '../domain/projection'
 import { cushionReport, freeToSpend } from '../domain/analysis'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
@@ -35,6 +35,9 @@ export function ResultsView({
   const report = cushionReport(rows, plan.safetyCushion)
   const overdraft = cushionReport(rows, 0)
   const thisMonth = rows.find((r) => r.month === current) ?? rows[0]
+  // Seul le mois en cours (celui du dernier solde saisi) peut être pointé
+  const pointable = current === startMonthOf(plan) ? current : null
+  const toggle = (id: string) => setPlan((p) => toggleSettled(p, id))
   const last = rows[rows.length - 1]
   const hasData =
     plan.startingCapital.amount !== 0 ||
@@ -138,10 +141,8 @@ export function ResultsView({
         </section>
       )}
 
-      {current > startMonthOf(plan) ? (
+      {current > startMonthOf(plan) && (
         <NewMonthCard key={current} plan={plan} current={current} suggested={thisMonth.opening} setPlan={setPlan} />
-      ) : (
-        <PointageCard plan={plan} row={rows[0]} setPlan={setPlan} />
       )}
 
       {inv.lines.length > 0 && <InvestmentsCard summary={inv} cash={thisMonth.opening} live={live} />}
@@ -163,14 +164,26 @@ export function ResultsView({
           <h2 className="text-sm font-bold text-muted">Mois par mois</h2>
           <p className="text-xs text-muted">Reste = entrées − sorties du mois</p>
         </div>
+        {current === startMonthOf(plan) && (
+          <p className="mb-2 px-1 text-xs text-muted">
+            Cochez dans {monthLabel(current).split(' ')[0]} ce qui est déjà passé sur votre compte depuis votre solde du{' '}
+            {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))}.
+          </p>
+        )}
         {/* Téléphone : une carte par mois */}
         <div className="space-y-2.5 lg:hidden">
           {rows.map((r) => (
-            <MonthCard key={r.month} row={r} cushion={plan.safetyCushion} isCurrent={r.month === current} />
+            <MonthCard
+              key={r.month}
+              row={r}
+              cushion={plan.safetyCushion}
+              isCurrent={r.month === current}
+              onToggle={r.month === pointable ? toggle : undefined}
+            />
           ))}
         </div>
         {/* Grand écran : tableau compact */}
-        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} />
+        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} pointable={pointable} onToggle={toggle} />
       </section>
     </div>
   )
@@ -281,11 +294,58 @@ function Stat({ icon, label, value, tone }: { icon: React.ReactNode; label: stri
   )
 }
 
-function MonthCard({ row: r, cushion, isCurrent }: { row: MonthRow; cushion: Cents; isCurrent: boolean }) {
+/** Lignes du détail d'un mois ; cochables (pointage) pour le mois en cours. */
+function DetailLine({ d, onToggle }: { d: MonthRow['details'][number]; onToggle?: (id: string) => void }) {
+  const content = (
+    <>
+      {onToggle &&
+        (d.settled ? (
+          <CheckCircle2 size={19} className="shrink-0 text-pos" />
+        ) : (
+          <Circle size={19} className="shrink-0 text-muted/50" strokeWidth={2.2} />
+        ))}
+      <span className={`min-w-0 flex-1 truncate ${d.settled ? 'text-muted line-through' : ''}`}>
+        {d.label || 'Sans nom'}
+        {d.settled && !onToggle && ' (déjà passé)'}
+      </span>
+      <span className={`num shrink-0 font-semibold ${d.settled ? 'text-muted line-through' : d.amount >= 0 ? 'text-pos' : 'text-neg'}`}>
+        {signedExact(d.amount)}
+      </span>
+    </>
+  )
+  if (!onToggle) return <div className="flex items-center gap-3 py-1.5">{content}</div>
+  return (
+    <button
+      type="button"
+      aria-pressed={d.settled}
+      onClick={() => onToggle(d.sourceId)}
+      className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-lg px-2 py-1.5 text-left transition hover:bg-surface"
+    >
+      {content}
+    </button>
+  )
+}
+
+function settledCount(r: MonthRow) {
+  return `${r.details.filter((d) => d.settled).length}/${r.details.length} passé${r.details.filter((d) => d.settled).length > 1 ? 's' : ''}`
+}
+
+function MonthCard({
+  row: r,
+  cushion,
+  isCurrent,
+  onToggle,
+}: {
+  row: MonthRow
+  cushion: Cents
+  isCurrent: boolean
+  onToggle?: (id: string) => void
+}) {
   const overdrawn = r.closing < 0
   const below = !overdrawn && r.closing < cushion
   return (
     <details
+      open={onToggle ? true : undefined}
       className={`group rounded-3xl bg-surface ring-1 transition ${
         overdrawn ? 'ring-neg/50' : below ? 'ring-warn/40' : isCurrent ? 'ring-accent/40' : 'ring-line'
       }`}
@@ -295,6 +355,7 @@ function MonthCard({ row: r, cushion, isCurrent }: { row: MonthRow; cushion: Cen
           <div className="flex min-w-0 items-center gap-2">
             <p className="font-bold">{cap(monthLabel(r.month))}</p>
             {isCurrent && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-ink">Ce mois-ci</span>}
+            {onToggle && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
             {overdrawn && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Découvert</span>}
             {below && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Sous le matelas</span>}
           </div>
@@ -325,14 +386,8 @@ function MonthCard({ row: r, cushion, isCurrent }: { row: MonthRow; cushion: Cen
             <span className="num">{eur(r.opening)}</span>
           </li>
           {r.details.map((d, i) => (
-            <li key={i} className={`flex justify-between gap-3 py-2 ${d.settled ? 'text-muted line-through' : ''}`}>
-              <span className="min-w-0 truncate">
-                {d.label || 'Sans nom'}
-                {d.settled && <span className="ml-1 no-underline">(déjà passé)</span>}
-              </span>
-              <span className={`num shrink-0 font-semibold ${d.settled ? '' : d.amount >= 0 ? 'text-pos' : 'text-neg'}`}>
-                {signedExact(d.amount)}
-              </span>
+            <li key={i} className="py-0.5">
+              <DetailLine d={d} onToggle={onToggle} />
             </li>
           ))}
         </ul>
@@ -341,8 +396,20 @@ function MonthCard({ row: r, cushion, isCurrent }: { row: MonthRow; cushion: Cen
   )
 }
 
-function MonthTable({ rows, cushion, current }: { rows: MonthRow[]; cushion: Cents; current: string }) {
-  const [open, setOpen] = useState<Set<string>>(new Set())
+function MonthTable({
+  rows,
+  cushion,
+  current,
+  pointable,
+  onToggle,
+}: {
+  rows: MonthRow[]
+  cushion: Cents
+  current: string
+  pointable: string | null
+  onToggle: (id: string) => void
+}) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set(pointable ? [pointable] : []))
   const toggle = (m: string) =>
     setOpen((prev) => {
       const next = new Set(prev)
@@ -380,6 +447,7 @@ function MonthTable({ rows, cushion, current }: { rows: MonthRow[]; cushion: Cen
                   <td className="py-2.5 pl-5 pr-2">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-semibold">{cap(monthLabel(r.month))}</span>
+                      {r.month === pointable && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
                       {overdrawn && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Découvert</span>}
                       {below && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Sous le matelas</span>}
                       {r.plannedMarkers.map((m, i) => (
@@ -408,14 +476,8 @@ function MonthTable({ rows, cushion, current }: { rows: MonthRow[]; cushion: Cen
                           <span className="num">{eur(r.opening)}</span>
                         </li>
                         {r.details.map((d, i) => (
-                          <li key={i} className={`flex justify-between gap-3 ${d.settled ? 'text-muted line-through' : ''}`}>
-                            <span className="truncate">
-                              {d.label || 'Sans nom'}
-                              {d.settled && ' (déjà passé)'}
-                            </span>
-                            <span className={`num shrink-0 font-semibold ${d.settled ? '' : d.amount >= 0 ? 'text-pos' : 'text-neg'}`}>
-                              {signedExact(d.amount)}
-                            </span>
+                          <li key={i}>
+                            <DetailLine d={d} onToggle={r.month === pointable ? onToggle : undefined} />
                           </li>
                         ))}
                       </ul>
