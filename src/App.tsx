@@ -6,6 +6,7 @@ import { supabase } from './sync/remote'
 import { useAuth } from './sync/useAuth'
 import { LoginScreen, NewPasswordScreen } from './ui/LoginScreen'
 import { Logo } from './ui/Logo'
+import { UpdateBanner } from './ui/UpdateBanner'
 import { PlanEditor } from './ui/PlanEditor'
 import { ResultsView } from './ui/ResultsView'
 import { useTheme, type ThemeChoice } from './ui/theme'
@@ -15,6 +16,15 @@ import { useQuotes } from './sync/quotes'
 type Tab = 'results' | 'data'
 
 export default function App() {
+  return (
+    <>
+      <UpdateBanner />
+      <Screens />
+    </>
+  )
+}
+
+function Screens() {
   const theme = useTheme()
   const { session, recovery, endRecovery } = useAuth()
   if (session === undefined) return <Splash />
