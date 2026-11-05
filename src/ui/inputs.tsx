@@ -5,13 +5,15 @@ import type { Cents, MonthKey } from '../domain/types'
 export const inputClass =
   'w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-base text-ink placeholder:text-muted/60 transition focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15'
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+/** Champ avec libellé. `group` : pour un groupe de boutons (pas de <label>, qui activerait le 1er bouton). */
+export function Field({ label, hint, children, group }: { label: string; hint?: string; children: ReactNode; group?: boolean }) {
+  const Tag = group ? 'div' : 'label'
   return (
-    <label className="block">
+    <Tag className="block" role={group ? 'group' : undefined} aria-label={group ? label : undefined}>
       <span className="mb-1.5 block text-[13px] font-semibold text-muted">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
-    </label>
+    </Tag>
   )
 }
 
@@ -61,10 +63,10 @@ export function MonthInput({
   emptyLabel?: string
 }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex min-w-0 gap-2">
       <input
         type="month"
-        className={inputClass}
+        className={`${inputClass} min-w-0`}
         value={value ?? ''}
         onChange={(e) => {
           const v = e.target.value

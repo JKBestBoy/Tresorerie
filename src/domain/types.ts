@@ -48,6 +48,11 @@ export interface PlannedExpense extends Settleable {
   /** Écart entre deux échéances en mois : 1 = mensuel (défaut), 3 = trimestriel */
   intervalMonths?: number
   /**
+   * Mois exact de chaque échéance, quand elles ne suivent pas un rythme régulier.
+   * Prioritaire sur month + intervalMonths s'il a autant d'éléments que d'échéances.
+   */
+  customMonths?: MonthKey[]
+  /**
    * Montant exact de chaque échéance, si elles ne sont pas égales.
    * Absent = découpage automatique de totalAmount en parts égales.
    */

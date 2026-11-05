@@ -9,7 +9,7 @@ import {
   touchesStartMonth,
 } from '../domain/defaults'
 import { formatEuros } from '../domain/money'
-import { monthLabel, monthOf } from '../domain/month'
+import { addMonths, monthLabel, monthOf } from '../domain/month'
 import { installmentAmounts, installmentSchedule, splitInstallments, startMonthOf } from '../domain/projection'
 import { samplePlan } from '../domain/sample'
 import type { Quotes } from '../domain/investments'
@@ -291,17 +291,36 @@ function PlannedExpenseCard({
   const custom = !!it.customAmounts
   const parts = installmentAmounts(it)
   const schedule = installmentSchedule(it)
-  const quarterly = (it.intervalMonths ?? 1) === 3
-  const unit = quarterly ? 'échéances' : 'mensualités'
+  const mode: 'monthly' | 'quarterly' | 'free' = it.customMonths ? 'free' : (it.intervalMonths ?? 1) === 3 ? 'quarterly' : 'monthly'
+  const unit = mode === 'monthly' ? 'mensualités' : 'échéances'
   const sum = (a: Cents[]) => a.reduce((s, x) => s + x, 0)
+  const earliest = (ms: string[]) => [...ms].sort()[0]
 
   function setInstallments(n: number) {
+    const patch: Partial<PlannedExpense> = { installments: n }
     if (custom && n > 1) {
       const next = Array.from({ length: n }, (_, i) => it.customAmounts![i] ?? 0)
-      onChange({ installments: n, customAmounts: next, totalAmount: sum(next) })
+      Object.assign(patch, { customAmounts: next, totalAmount: sum(next) })
     } else {
-      onChange({ installments: n, customAmounts: undefined })
+      patch.customAmounts = undefined
     }
+    if (mode === 'free' && n > 1) {
+      const months = schedule.map((x) => x.month)
+      const next = Array.from({ length: n }, (_, i) => months[i] ?? addMonths(months[months.length - 1], i - months.length + 1))
+      patch.customMonths = next
+    } else if (n <= 1) {
+      patch.customMonths = undefined
+    }
+    onChange(patch)
+  }
+  function setMode(m: typeof mode) {
+    if (m === 'free') onChange({ customMonths: schedule.map((x) => x.month), intervalMonths: undefined })
+    else onChange({ customMonths: undefined, intervalMonths: m === 'quarterly' ? 3 : undefined, month: earliest(schedule.map((x) => x.month)) })
+  }
+  function setMonthAt(i: number, m: string) {
+    const next = schedule.map((x) => x.month)
+    next[i] = m
+    onChange({ customMonths: next, month: earliest(next) })
   }
   function setCustom(on: boolean) {
     if (on) onChange({ customAmounts: splitInstallments(it.totalAmount, it.installments) })
@@ -326,9 +345,11 @@ function PlannedExpenseCard({
             <MoneyInput value={it.totalAmount} onChange={(totalAmount) => onChange({ totalAmount })} />
           )}
         </Field>
-        <Field label={it.installments > 1 ? 'Mois du 1er paiement' : 'Mois'}>
-          <MonthInput value={it.month} onChange={(m) => m && onChange({ month: m })} />
-        </Field>
+        {mode !== 'free' && (
+          <Field label={it.installments > 1 ? 'Mois du 1er paiement' : 'Mois'}>
+            <MonthInput value={it.month} onChange={(m) => m && onChange({ month: m })} />
+          </Field>
+        )}
         <Field
           label="Paiement">
           <select className={inputClass} value={it.installments} onChange={(e) => setInstallments(Number(e.target.value))}>
@@ -342,20 +363,21 @@ function PlannedExpenseCard({
         </Field>
       </div>
       {it.installments > 1 && (
-        <Field label="Fréquence des paiements">
-          <div className="grid grid-cols-2 gap-2">
+        <Field label="Dates des paiements" group>
+          <div className="grid grid-cols-3 gap-2">
             {(
               [
-                [1, 'Tous les mois'],
-                [3, 'Tous les 3 mois (trimestriel)'],
+                ['monthly', 'Tous les mois'],
+                ['quarterly', 'Tous les 3 mois'],
+                ['free', 'Dates libres'],
               ] as const
             ).map(([v, label]) => (
               <button
                 key={v}
                 type="button"
-                onClick={() => onChange({ intervalMonths: v === 1 ? undefined : v })}
-                className={`rounded-xl px-2 py-2.5 text-sm font-semibold ring-1 transition ${
-                  (it.intervalMonths ?? 1) === v ? 'bg-accent text-white ring-accent dark:text-bg' : 'bg-surface text-ink ring-line'
+                onClick={() => setMode(v)}
+                className={`rounded-xl px-1.5 py-2.5 text-sm font-semibold ring-1 transition ${
+                  mode === v ? 'bg-accent text-white ring-accent dark:text-bg' : 'bg-surface text-ink ring-line'
                 }`}
               >
                 {label}
@@ -364,7 +386,7 @@ function PlannedExpenseCard({
           </div>
         </Field>
       )}
-      {it.installments > 1 && !custom && it.totalAmount > 0 && (
+      {it.installments > 1 && !custom && mode !== 'free' && it.totalAmount > 0 && (
         <p className="num rounded-xl bg-accent-soft px-3 py-2 text-sm font-medium text-accent-ink">
           {schedule.length} × {formatEuros(parts[parts.length - 1])}, de {monthLabel(schedule[0].month)} à {monthLabel(schedule[schedule.length - 1].month)}
         </p>
@@ -372,16 +394,31 @@ function PlannedExpenseCard({
       {it.installments > 1 && (
         <Checkbox label={`Les ${unit} n’ont pas toutes le même montant`} checked={custom} onChange={setCustom} />
       )}
-      {custom && (
+      {it.installments > 1 && (custom || mode === 'free') && (
         <div className="space-y-2 rounded-2xl bg-surface p-3 ring-1 ring-line">
-          {parts.map((c, i) => (
-            <div key={i} className="grid grid-cols-[1fr_9rem] items-center gap-3">
-              <span className="text-sm text-muted">
-                {i + 1}. {monthLabel(schedule[i].month)}
-              </span>
-              <MoneyInput value={c} onChange={(v) => setPart(i, v)} />
-            </div>
-          ))}
+          {mode === 'free' && <p className="text-xs text-muted">Choisissez le mois de chaque paiement :</p>}
+          {parts.map((c, i) =>
+            mode === 'free' ? (
+              <div key={i} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2 border-b border-line pb-2 last:border-0 last:pb-0">
+                <span className="pt-3 text-sm font-semibold text-muted">{i + 1}.</span>
+                <div className={custom ? 'space-y-1.5' : 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3'}>
+                  <MonthInput value={schedule[i].month} onChange={(m) => m && setMonthAt(i, m)} />
+                  {custom ? (
+                    <MoneyInput value={c} onChange={(v) => setPart(i, v)} />
+                  ) : (
+                    <span className="num text-sm font-semibold">{formatEuros(c)}</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div key={i} className="grid grid-cols-[1fr_9rem] items-center gap-3">
+                <span className="text-sm text-muted">
+                  {i + 1}. {monthLabel(schedule[i].month)}
+                </span>
+                <MoneyInput value={c} onChange={(v) => setPart(i, v)} />
+              </div>
+            ),
+          )}
         </div>
       )}
       {showSettled && (

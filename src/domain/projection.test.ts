@@ -133,6 +133,24 @@ describe('projection', () => {
     expect(rows[4].plannedMarkers).toEqual(['Impôts (2/3)'])
   })
 
+  it('dates libres : chaque échéance à son mois', () => {
+    const rows = project(
+      plan({
+        plannedExpenses: [
+          {
+            id: 'p', label: 'Dentiste', totalAmount: 0, month: '2026-12', installments: 3,
+            customAmounts: [30000, 20000, 10000], customMonths: ['2026-12', '2027-02', '2027-07'],
+          },
+        ],
+      }),
+      [],
+      NOW,
+    )
+    const out = Object.fromEntries(rows.filter((r) => r.outflows).map((r) => [r.month, r.outflows]))
+    expect(out).toEqual({ '2026-12': 30000, '2027-02': 20000, '2027-07': 10000 })
+    expect(rows.find((r) => r.month === '2027-07')!.plannedMarkers).toEqual(['Dentiste (3/3)'])
+  })
+
   it('calcule le reste du mois (entrées - sorties)', () => {
     const rows = project(
       plan({

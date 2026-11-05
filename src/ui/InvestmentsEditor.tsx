@@ -144,7 +144,7 @@ function InvestmentCard({
       </div>
 
       {live && (
-        <Field label={inv.kind === 'crypto' ? 'Quelle crypto ?' : 'Quel titre ? (nom, ISIN ou code)'}>
+        <Field group label={inv.kind === 'crypto' ? 'Quelle crypto ?' : 'Quel titre ? (nom, ISIN ou code)'}>
           {searching || !inv.symbol ? (
             <AssetSearch
               kind={inv.kind as 'crypto' | 'security'}

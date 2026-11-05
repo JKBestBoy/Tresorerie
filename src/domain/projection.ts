@@ -22,7 +22,9 @@ export function installmentAmounts(e: PlannedExpense): Cents[] {
 /** Échéancier d'une grosse dépense : mois et montant de chaque paiement. */
 export function installmentSchedule(e: PlannedExpense): { month: MonthKey; amount: Cents }[] {
   const step = Math.max(1, e.intervalMonths ?? 1)
-  return installmentAmounts(e).map((amount, i) => ({ month: addMonths(e.month, i * step), amount }))
+  const amounts = installmentAmounts(e)
+  const free = e.customMonths && e.customMonths.length === amounts.length ? e.customMonths : null
+  return amounts.map((amount, i) => ({ month: free ? free[i] : addMonths(e.month, i * step), amount }))
 }
 
 function isActive(month: MonthKey, start: MonthKey | null, end: MonthKey | null): boolean {
