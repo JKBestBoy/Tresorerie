@@ -20,11 +20,13 @@ export function installmentAmounts(e: PlannedExpense): Cents[] {
 }
 
 /** Échéancier d'une grosse dépense : mois et montant de chaque paiement. */
-export function installmentSchedule(e: PlannedExpense): { month: MonthKey; amount: Cents }[] {
+export function installmentSchedule(e: PlannedExpense): { month: MonthKey; amount: Cents; index: number }[] {
   const step = Math.max(1, e.intervalMonths ?? 1)
   const amounts = installmentAmounts(e)
   const free = e.customMonths && e.customMonths.length === amounts.length ? e.customMonths : null
-  return amounts.map((amount, i) => ({ month: free ? free[i] : addMonths(e.month, i * step), amount }))
+  const items = amounts.map((amount, index) => ({ month: free ? free[index] : addMonths(e.month, index * step), amount, index }))
+  // Dates libres : toujours dans l'ordre chronologique, chaque montant suivant sa date
+  return free ? items.sort((a, b) => a.month.localeCompare(b.month) || a.index - b.index) : items
 }
 
 function isActive(month: MonthKey, start: MonthKey | null, end: MonthKey | null): boolean {

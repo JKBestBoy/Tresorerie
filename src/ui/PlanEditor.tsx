@@ -309,39 +309,55 @@ function PlannedExpenseCard({
   const sum = (a: Cents[]) => a.reduce((s, x) => s + x, 0)
   const earliest = (ms: string[]) => [...ms].sort()[0]
 
+  /** Dates libres : enregistre mois et montants triés par date (chaque montant suit sa date). */
+  function sortedFree(months: string[], amounts: Cents[] | undefined): Partial<PlannedExpense> {
+    const order = months.map((_, i) => i).sort((a, b) => months[a].localeCompare(months[b]) || a - b)
+    const patch: Partial<PlannedExpense> = { customMonths: order.map((i) => months[i]), month: earliest(months) }
+    if (amounts) patch.customAmounts = order.map((i) => amounts[i])
+    return patch
+  }
   function setInstallments(n: number) {
+    // On part de l'échéancier dans l'ordre chronologique (mois + montant de chaque échéance)
+    const months = schedule.map((x) => x.month)
+    const amounts = schedule.map((x) => x.amount)
     const patch: Partial<PlannedExpense> = { installments: n }
-    if (custom && n > 1) {
-      const next = Array.from({ length: n }, (_, i) => it.customAmounts![i] ?? 0)
-      Object.assign(patch, { customAmounts: next, totalAmount: sum(next) })
-    } else {
-      patch.customAmounts = undefined
-    }
+    const nextAmounts = custom && n > 1 ? Array.from({ length: n }, (_, i) => amounts[i] ?? 0) : undefined
+    patch.customAmounts = nextAmounts
+    if (nextAmounts) patch.totalAmount = sum(nextAmounts)
     if (mode === 'free' && n > 1) {
-      const months = schedule.map((x) => x.month)
-      const next = Array.from({ length: n }, (_, i) => months[i] ?? addMonths(months[months.length - 1], i - months.length + 1))
-      patch.customMonths = next
+      patch.customMonths = Array.from({ length: n }, (_, i) => months[i] ?? addMonths(months[months.length - 1], i - months.length + 1))
     } else if (n <= 1) {
       patch.customMonths = undefined
     }
     onChange(patch)
   }
   function setMode(m: typeof mode) {
-    if (m === 'free') onChange({ customMonths: schedule.map((x) => x.month), intervalMonths: undefined })
-    else onChange({ customMonths: undefined, intervalMonths: m === 'quarterly' ? 3 : undefined, month: earliest(schedule.map((x) => x.month)) })
+    const amounts = custom ? schedule.map((x) => x.amount) : undefined
+    if (m === 'free') onChange({ customMonths: schedule.map((x) => x.month), customAmounts: amounts, intervalMonths: undefined })
+    else
+      onChange({
+        customMonths: undefined,
+        customAmounts: amounts,
+        intervalMonths: m === 'quarterly' ? 3 : undefined,
+        month: earliest(schedule.map((x) => x.month)),
+      })
   }
-  function setMonthAt(i: number, m: string) {
-    const next = schedule.map((x) => x.month)
-    next[i] = m
-    onChange({ customMonths: next, month: earliest(next) })
+  /** Change le mois d'une échéance (repérée par sa position enregistrée) puis réordonne. */
+  function setMonthAt(index: number, m: string) {
+    const months = schedule.map((x) => x.month)
+    const amounts = custom ? schedule.map((x) => x.amount) : undefined
+    const pos = schedule.findIndex((x) => x.index === index)
+    months[pos] = m
+    onChange(sortedFree(months, amounts))
   }
   function setCustom(on: boolean) {
     if (on) onChange({ customAmounts: splitInstallments(it.totalAmount, it.installments) })
     else onChange({ customAmounts: undefined, totalAmount: sum(parts) })
   }
-  function setPart(i: number, c: Cents) {
+  /** Change le montant d'une échéance (repérée par sa position enregistrée). */
+  function setPart(index: number, c: Cents) {
     const next = [...parts]
-    next[i] = c
+    next[index] = c
     onChange({ customAmounts: next, totalAmount: sum(next) })
   }
 
@@ -419,15 +435,15 @@ function PlannedExpenseCard({
       )}
       {it.installments > 1 && (custom || mode === 'free') && (
         <div className="space-y-2 rounded-2xl bg-surface p-3 ring-1 ring-line">
-          {mode === 'free' && <p className="text-xs text-muted">Choisissez le mois de chaque paiement :</p>}
-          {parts.map((c, i) =>
+          {mode === 'free' && <p className="text-xs text-muted">Choisissez le mois de chaque paiement (rangés automatiquement par date) :</p>}
+          {schedule.map(({ month, amount: c, index }, i) =>
             mode === 'free' ? (
               <div key={i} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2 border-b border-line pb-2 last:border-0 last:pb-0">
                 <span className="pt-3 text-sm font-semibold text-muted">{i + 1}.</span>
                 <div className={custom ? 'space-y-1.5' : 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3'}>
-                  <MonthInput value={schedule[i].month} onChange={(m) => m && setMonthAt(i, m)} />
+                  <MonthInput value={month} onChange={(m) => m && setMonthAt(index, m)} />
                   {custom ? (
-                    <MoneyInput value={c} onChange={(v) => setPart(i, v)} />
+                    <MoneyInput value={c} onChange={(v) => setPart(index, v)} />
                   ) : (
                     <span className="num text-sm font-semibold">{formatEuros(c)}</span>
                   )}
@@ -436,9 +452,9 @@ function PlannedExpenseCard({
             ) : (
               <div key={i} className="grid grid-cols-[1fr_9rem] items-center gap-3">
                 <span className="text-sm text-muted">
-                  {i + 1}. {monthLabel(schedule[i].month)}
+                  {i + 1}. {monthLabel(month)}
                 </span>
-                <MoneyInput value={c} onChange={(v) => setPart(i, v)} />
+                <MoneyInput value={c} onChange={(v) => setPart(index, v)} />
               </div>
             ),
           )}

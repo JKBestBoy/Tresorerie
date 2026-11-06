@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addMonths, monthDiff } from './month'
 import { parseEuros } from './money'
-import { paidKeys, project, setActual, setOpening, splitInstallments, toggleSettled, withNewBalance } from './projection'
+import { installmentSchedule, paidKeys, project, setActual, setOpening, splitInstallments, toggleSettled, withNewBalance } from './projection'
 import { cushionReport, freeToSpend, whatIf } from './analysis'
 import type { Plan } from './types'
 
@@ -226,6 +226,22 @@ describe('projection', () => {
     const out = Object.fromEntries(rows.filter((r) => r.outflows).map((r) => [r.month, r.outflows]))
     expect(out).toEqual({ '2026-12': 30000, '2027-02': 20000, '2027-07': 10000 })
     expect(rows.find((r) => r.month === '2027-07')!.plannedMarkers).toEqual(['Dentiste (3/3)'])
+  })
+
+  it('dates libres saisies dans le désordre : échéances remises dans l’ordre des dates', () => {
+    const e = {
+      id: 'd', label: 'Dentiste', totalAmount: 0, month: '2026-12', installments: 3,
+      customAmounts: [50000, 30000, 2000], customMonths: ['2026-12', '2027-03', '2026-11'],
+    }
+    expect(installmentSchedule(e).map((x) => [x.month, x.amount])).toEqual([
+      ['2026-11', 2000],
+      ['2026-12', 50000],
+      ['2027-03', 30000],
+    ])
+    const rows = project(plan({ plannedExpenses: [e] }), [], NOW)
+    expect(rows[0].plannedMarkers).toEqual(['Dentiste (1/3)'])
+    expect(rows[0].outflows).toBe(2000)
+    expect(rows[4].plannedMarkers).toEqual(['Dentiste (3/3)'])
   })
 
   it('calcule le reste du mois (entrées - sorties)', () => {
