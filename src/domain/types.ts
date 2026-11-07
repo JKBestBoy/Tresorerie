@@ -32,9 +32,14 @@ export interface OneOffIncome extends Settleable {
 export interface FixedExpense extends Settleable {
   id: string
   label: string
+  /** Montant de chaque paiement (chaque mois, ou tous les N mois selon `everyMonths`) */
   monthlyAmount: Cents
   startMonth: MonthKey | null
   endMonth: MonthKey | null
+  /** Fréquence : 1 = tous les mois (défaut), 2 = tous les 2 mois, 3, 6, 12… */
+  everyMonths?: number
+  /** Pour une fréquence > 1 : un mois où le paiement tombe (sert de repère au rythme) */
+  anchorMonth?: MonthKey
 }
 
 export interface PlannedExpense extends Settleable {

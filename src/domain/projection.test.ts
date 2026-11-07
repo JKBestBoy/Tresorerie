@@ -90,6 +90,27 @@ describe('projection', () => {
     rows.slice(1).forEach((r, i) => expect(r.opening).toBe(rows[i].closing))
   })
 
+  it('dépense fixe tous les 2 mois (électricité) : un mois sur deux à partir du mois repère', () => {
+    const rows = project(
+      plan({
+        fixedExpenses: [
+          { id: 'e', label: 'Électricité', monthlyAmount: 9000, startMonth: null, endMonth: null, everyMonths: 2, anchorMonth: '2026-12' },
+          { id: 'a', label: 'Assurance', monthlyAmount: 30000, startMonth: null, endMonth: null, everyMonths: 12, anchorMonth: '2027-03' },
+        ],
+      }),
+      [],
+      NOW,
+    )
+    expect(rows.slice(0, 7).map((r) => r.outflows)).toEqual([0, 9000, 0, 9000, 30000, 9000, 0])
+    // Mois repère dans le passé : le rythme continue
+    const rows2 = project(
+      plan({ fixedExpenses: [{ id: 'e', label: 'Élec', monthlyAmount: 9000, startMonth: null, endMonth: null, everyMonths: 2, anchorMonth: '2026-07' }] }),
+      [],
+      NOW,
+    )
+    expect(rows2.slice(0, 4).map((r) => r.outflows)).toEqual([9000, 0, 9000, 0])
+  })
+
   it('respecte début/fin optionnels des dépenses fixes', () => {
     const rows = project(
       plan({ fixedExpenses: [{ id: 'f', label: 'Abo', monthlyAmount: 1000, startMonth: '2026-12', endMonth: '2027-01' }] }),

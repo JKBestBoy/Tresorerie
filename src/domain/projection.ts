@@ -1,5 +1,5 @@
 import { addMonths, maxMonth, monthDiff, monthOf } from './month'
-import type { Cents, FlowLine, HistoryMonth, MonthKey, MonthRow, Plan, PlannedExpense } from './types'
+import type { Cents, FixedExpense, FlowLine, HistoryMonth, MonthKey, MonthRow, Plan, PlannedExpense } from './types'
 
 /**
  * Découpe un montant en N mensualités entières (centimes).
@@ -27,6 +27,15 @@ export function installmentSchedule(e: PlannedExpense): { month: MonthKey; amoun
   const items = amounts.map((amount, index) => ({ month: free ? free[index] : addMonths(e.month, index * step), amount, index }))
   // Dates libres : toujours dans l'ordre chronologique, chaque montant suivant sa date
   return free ? items.sort((a, b) => a.month.localeCompare(b.month) || a.index - b.index) : items
+}
+
+/** Dépense fixe tous les N mois : tombe-t-elle ce mois-ci ? (repère = anchorMonth, sinon début, sinon tous) */
+export function fallsInMonth(f: FixedExpense, m: MonthKey): boolean {
+  const n = Math.max(1, Math.floor(f.everyMonths ?? 1))
+  if (n === 1) return true
+  const anchor = f.anchorMonth ?? f.startMonth
+  if (!anchor) return true
+  return ((monthDiff(anchor, m) % n) + n) % n === 0
 }
 
 function isActive(month: MonthKey, start: MonthKey | null, end: MonthKey | null): boolean {
@@ -202,7 +211,7 @@ export function project(
       }
     }
     for (const f of plan.fixedExpenses) {
-      if (isActive(m, f.startMonth, f.endMonth)) {
+      if (isActive(m, f.startMonth, f.endMonth) && fallsInMonth(f, m)) {
         push(m, {
           sourceId: f.id,
           kind: 'fixedExpense',

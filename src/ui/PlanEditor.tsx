@@ -52,9 +52,10 @@ export function PlanEditor({
     plan.startingCapital.amount === 0 &&
     plan.incomePeriods.length + plan.oneOffIncomes.length + plan.fixedExpenses.length + plan.plannedExpenses.length === 0
 
+  // Équivalent mensuel : une dépense de 90 € tous les 2 mois compte pour 45 €/mois
   const fixedTotal = plan.fixedExpenses
     .filter((f) => (f.startMonth === null || f.startMonth <= start) && (f.endMonth === null || f.endMonth >= start))
-    .reduce((s, f) => s + f.monthlyAmount, 0)
+    .reduce((s, f) => s + f.monthlyAmount / Math.max(1, f.everyMonths ?? 1), 0)
 
   return (
     <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0">
@@ -173,8 +174,8 @@ export function PlanEditor({
       <Section
         icon={Home}
         tone="rose"
-        title="Dépenses fixes mensuelles"
-        subtitle="Loyer, abonnements, courses, transport…"
+        title="Dépenses fixes"
+        subtitle="Loyer, abonnements, électricité… tous les mois ou tous les N mois"
         total={plan.fixedExpenses.length ? `${formatEuros(fixedTotal, { round: true })}/mois` : undefined}
       >
         {plan.fixedExpenses.map((it) => (
@@ -182,17 +183,48 @@ export function PlanEditor({
             key={it.id}
             onDelete={() => remove('fixedExpenses', it.id)}
             title={it.label}
-            detail={it.startMonth || it.endMonth ? periodText(it.startMonth, it.endMonth) : undefined}
-            amount={`${formatEuros(it.monthlyAmount, { round: it.monthlyAmount % 100 === 0 })}/mois`}
+            detail={
+              [
+                (it.everyMonths ?? 1) > 1 ? frequencyLabel(it.everyMonths!) : null,
+                it.startMonth || it.endMonth ? periodText(it.startMonth, it.endMonth) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || undefined
+            }
+            amount={`${formatEuros(it.monthlyAmount, { round: it.monthlyAmount % 100 === 0 })}${(it.everyMonths ?? 1) > 1 ? '' : '/mois'}`}
             isNew={!it.label && !it.monthlyAmount}
           >
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Nom">
                 <TextInput value={it.label} placeholder="Loyer" onChange={(label) => update('fixedExpenses', it.id, { label })} />
               </Field>
-              <Field label="Montant par mois">
+              <Field label={(it.everyMonths ?? 1) > 1 ? 'Montant de chaque paiement' : 'Montant par mois'}>
                 <MoneyInput value={it.monthlyAmount} onChange={(monthlyAmount) => update('fixedExpenses', it.id, { monthlyAmount })} />
               </Field>
+              <Field label="Fréquence">
+                <select
+                  className={inputClass}
+                  value={it.everyMonths ?? 1}
+                  onChange={(e) => {
+                    const n = Number(e.target.value)
+                    update('fixedExpenses', it.id, {
+                      everyMonths: n > 1 ? n : undefined,
+                      anchorMonth: n > 1 ? (it.anchorMonth ?? it.startMonth ?? start) : undefined,
+                    })
+                  }}
+                >
+                  {FREQUENCIES.map((n) => (
+                    <option key={n} value={n}>
+                      {frequencyLabel(n)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {(it.everyMonths ?? 1) > 1 && (
+                <Field label="Un mois où elle tombe" hint={`Ex : le prochain paiement. Ensuite ${frequencyLabel(it.everyMonths!).toLowerCase()}.`}>
+                  <MonthInput value={it.anchorMonth ?? start} onChange={(m) => m && update('fixedExpenses', it.id, { anchorMonth: m })} />
+                </Field>
+              )}
             </div>
             <details className="text-sm" open={!!(it.startMonth || it.endMonth)}>
               <summary className="cursor-pointer text-sm font-medium text-accent">Dates de début / fin (optionnel)</summary>
@@ -288,6 +320,13 @@ function periodText(start: string | null, end: string | null): string {
   if (e) return `jusqu’en ${e}`
   if (s) return `dès ${s}`
   return 'tous les mois'
+}
+
+const FREQUENCIES = [1, 2, 3, 6, 12]
+function frequencyLabel(n: number): string {
+  if (n === 1) return 'Tous les mois'
+  if (n === 12) return 'Une fois par an'
+  return `Tous les ${n} mois`
 }
 
 const INSTALLMENT_CHOICES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 18, 24, 36, 48]
