@@ -201,24 +201,16 @@ export function PlanEditor({
               <Field label={(it.everyMonths ?? 1) > 1 ? 'Montant de chaque paiement' : 'Montant par mois'}>
                 <MoneyInput value={it.monthlyAmount} onChange={(monthlyAmount) => update('fixedExpenses', it.id, { monthlyAmount })} />
               </Field>
-              <Field label="Fréquence">
-                <select
-                  className={inputClass}
+              <Field label="Fréquence" group>
+                <FrequencyPicker
                   value={it.everyMonths ?? 1}
-                  onChange={(e) => {
-                    const n = Number(e.target.value)
+                  onChange={(n) =>
                     update('fixedExpenses', it.id, {
                       everyMonths: n > 1 ? n : undefined,
                       anchorMonth: n > 1 ? (it.anchorMonth ?? it.startMonth ?? start) : undefined,
                     })
-                  }}
-                >
-                  {FREQUENCIES.map((n) => (
-                    <option key={n} value={n}>
-                      {frequencyLabel(n)}
-                    </option>
-                  ))}
-                </select>
+                  }
+                />
               </Field>
               {(it.everyMonths ?? 1) > 1 && (
                 <Field label="Un mois où elle tombe" hint={`Ex : le prochain paiement. Ensuite ${frequencyLabel(it.everyMonths!).toLowerCase()}.`}>
@@ -327,6 +319,39 @@ function frequencyLabel(n: number): string {
   if (n === 1) return 'Tous les mois'
   if (n === 12) return 'Une fois par an'
   return `Tous les ${n} mois`
+}
+
+/** Boutons « Tous les mois » / « Tous les 2 mois » / « Autre » (3, 6 ou 12 mois). */
+function FrequencyPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const other = value > 2
+  const btn = (active: boolean) =>
+    `rounded-xl px-1.5 py-2.5 text-sm font-semibold ring-1 transition ${
+      active ? 'bg-accent text-white ring-accent dark:text-bg' : 'bg-surface text-ink ring-line'
+    }`
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2">
+        <button type="button" className={btn(value === 1)} onClick={() => onChange(1)}>
+          Tous les mois
+        </button>
+        <button type="button" className={btn(value === 2)} onClick={() => onChange(2)}>
+          Tous les 2 mois
+        </button>
+        <button type="button" className={btn(other)} onClick={() => onChange(other ? value : 3)}>
+          Autre
+        </button>
+      </div>
+      {other && (
+        <select className={inputClass} value={value} onChange={(e) => onChange(Number(e.target.value))}>
+          {FREQUENCIES.filter((n) => n > 2).map((n) => (
+            <option key={n} value={n}>
+              {frequencyLabel(n)}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  )
 }
 
 const INSTALLMENT_CHOICES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 18, 24, 36, 48]
