@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f5fb" />
+    <title>Ma trésorerie</title>
+    <meta name="description" content="Simulateur de trésorerie personnelle" />
+    <link rel="icon" type="image/svg+xml" href="/Tresorerie/icon.svg" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/Tresorerie/favicon-48.png" />
+    <link rel="apple-touch-icon" href="/Tresorerie/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Trésorerie" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      // Applique le thème avant l'affichage pour éviter un flash blanc
+      try {
+        var t = localStorage.getItem('theme') || 'auto'
+        var dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) document.documentElement.classList.add('dark')
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="/Tresorerie/assets/index-BdodyTW6.js"></script>
+    <link rel="stylesheet" crossorigin href="/Tresorerie/assets/index-A1MQjVhZ.css">
+  <link rel="manifest" href="/Tresorerie/manifest.webmanifest"></head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
