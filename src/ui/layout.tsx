@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { ChevronDown, Plus, Trash2, type LucideIcon } from 'lucide-react'
+import { Help } from './Help'
 
 export const TONES = {
   indigo: 'bg-indigo-500/12 text-indigo-600 dark:text-indigo-300',
@@ -18,6 +19,7 @@ export function Section({
   tone,
   children,
   defaultOpen = false,
+  help,
 }: {
   title: string
   subtitle?: string
@@ -26,6 +28,8 @@ export function Section({
   tone: keyof typeof TONES
   children: ReactNode
   defaultOpen?: boolean
+  /** Contenu d'aide affiché par le « ? » à côté du titre */
+  help?: ReactNode
 }) {
   return (
     <details open={defaultOpen || undefined} className="group rounded-3xl bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(30_27_75/0.12)] ring-1 ring-line">
@@ -34,7 +38,10 @@ export function Section({
           <Icon size={22} strokeWidth={2} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-bold leading-tight">{title}</h2>
+          <h2 className="flex items-center gap-1 font-bold leading-tight">
+            {title}
+            {help && <Help title={title}>{help}</Help>}
+          </h2>
           {subtitle && <p className="mt-0.5 text-xs leading-snug text-muted">{subtitle}</p>}
         </div>
         {total && <span className="num shrink-0 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-semibold text-muted">{total}</span>}

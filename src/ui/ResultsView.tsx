@@ -1,8 +1,9 @@
 import { Fragment, useMemo, useState } from 'react'
-import { AlertTriangle, Circle, ArrowDownLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, PencilLine, RefreshCw, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Circle, ArrowDownLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronDown, PencilLine, RefreshCw, TrendingUp, Pencil } from 'lucide-react'
 import { investmentsSummary } from '../domain/investments'
 import type { useQuotes } from '../sync/quotes'
 import { NewMonthCard } from './Pointage'
+import { Help } from './Help'
 import { BalanceChart } from './BalanceChart'
 import { MoneyInput } from './inputs'
 import { setActual, setOpening, startMonthOf, toggleSettled } from '../domain/projection'
@@ -72,7 +73,13 @@ export function ResultsView({
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 p-5 text-white shadow-xl shadow-indigo-600/25">
         <div className="pointer-events-none absolute -right-10 -top-12 h-44 w-44 rounded-full bg-white/10" />
         <div className="pointer-events-none absolute -bottom-16 right-16 h-40 w-40 rounded-full bg-white/5" />
-        <p className="relative text-sm font-medium text-white/80">Je peux dépenser librement aujourd’hui</p>
+        <p className="relative flex items-center gap-1 text-sm font-medium text-white/80">
+          Je peux dépenser librement aujourd’hui
+          <Help title="Je peux dépenser librement" light>
+            <p>Le montant que vous pouvez dépenser aujourd’hui sans que votre solde ne passe jamais sous votre matelas, en tenant compte de tout ce qui est prévu jusqu’à la fin de la période (revenus, dépenses fixes, grosses dépenses).</p>
+            <p>Seules vos liquidités comptent : vos placements sont affichés à part.</p>
+          </Help>
+        </p>
         <p className="num relative mt-1 text-[2.75rem] font-extrabold leading-none tracking-tight">{eur(freeRounded)}</p>
         <p className="relative mt-2 text-sm text-white/80">
           sur mes liquidités, sans jamais passer sous mon matelas de{' '}
@@ -165,11 +172,22 @@ export function ResultsView({
       <div className="space-y-4">
       {/* Mois par mois */}
       <section>
-        <h2 className="mb-2 px-1 text-sm font-bold text-muted">Mois par mois</h2>
+        <h2 className="mb-2 flex items-center gap-1 px-1 text-sm font-bold text-muted">
+          Mois par mois
+          <Help title="Mois par mois">
+            <p>Pour chaque mois : ce qui rentre, ce qui sort, ce qu’il reste, et votre solde en fin de mois. Touchez un mois pour voir le détail.</p>
+            <p>
+              <strong className="text-ink">Cochez le rond</strong> d’une ligne quand elle est passée sur votre compte : l’app ne la compte plus, puisqu’elle est déjà dans votre solde.
+            </p>
+            <p>
+              <strong className="text-ink">Touchez un montant</strong> (✎) pour indiquer le vrai montant de ce mois-là, par exemple des courses moins chères que prévu. Le « solde début de mois » se corrige de la même façon.
+            </p>
+          </Help>
+        </h2>
         <p className="mb-2 px-1 text-xs text-muted">
-          Cochez ce qui est déjà passé sur votre compte depuis votre solde du{' '}
-          {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))}
-          , y compris ce que vous avez payé en avance.
+          ◯ Cochez ce qui est passé sur votre compte depuis votre solde du{' '}
+          {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))} · ✎ touchez un montant
+          pour le corriger.
         </p>
         {/* Téléphone : une carte par mois */}
         <div className="space-y-2.5 lg:hidden">
@@ -384,8 +402,11 @@ function DetailLine({
         title="Modifier le montant de ce mois"
         className="num flex shrink-0 flex-col items-end rounded-md px-1.5 py-1 hover:bg-surface-2"
       >
-        <span className={`font-semibold ${color} ${d.settled ? 'line-through' : ''} ${changed ? 'underline decoration-dotted underline-offset-4' : ''}`}>
-          {signedExact(d.amount)}
+        <span className="flex items-center gap-1">
+          <span className={`font-semibold ${color} ${d.settled ? 'line-through' : ''} ${changed ? 'underline decoration-dotted underline-offset-4' : ''}`}>
+            {signedExact(d.amount)}
+          </span>
+          <Pencil size={11} className="shrink-0 text-muted/60" aria-hidden />
         </span>
         {changed && <span className="text-[10px] leading-tight text-muted">prévu {formatEuros(Math.abs(d.planned!))}</span>}
       </button>
@@ -450,8 +471,11 @@ function OpeningLine({ row: r, isStart, onOpening }: { row: MonthRow; isStart: b
     >
       <span>Solde début de mois</span>
       <span className="num flex flex-col items-end">
-        <span className={`font-semibold ${changed ? 'text-ink underline decoration-dotted underline-offset-4' : ''} ${r.opening < 0 ? 'text-neg' : ''}`}>
-          {formatEuros(r.opening)}
+        <span className="flex items-center gap-1">
+          <span className={`font-semibold ${changed ? 'text-ink underline decoration-dotted underline-offset-4' : ''} ${r.opening < 0 ? 'text-neg' : ''}`}>
+            {formatEuros(r.opening)}
+          </span>
+          <Pencil size={11} className="shrink-0 text-muted/60" aria-hidden />
         </span>
         {changed && <span className="text-[10px] leading-tight">calculé {formatEuros(r.plannedOpening!)}</span>}
       </span>
@@ -460,7 +484,7 @@ function OpeningLine({ row: r, isStart, onOpening }: { row: MonthRow; isStart: b
 }
 
 function settledCount(r: MonthRow) {
-  return `${r.details.filter((d) => d.settled).length}/${r.details.length} passé${r.details.filter((d) => d.settled).length > 1 ? 's' : ''}`
+  return `${r.details.filter((d) => d.settled).length}/${r.details.length} ✓`
 }
 
 function MonthCard({

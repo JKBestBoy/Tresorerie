@@ -63,7 +63,7 @@ export function PlanEditor({
         <div className="rounded-3xl lg:col-span-2 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 p-5 text-white shadow-lg shadow-indigo-500/20">
           <Sparkles size={22} className="mb-2 opacity-90" />
           <p className="text-lg font-bold">Bienvenue !</p>
-          <p className="mt-1 text-sm text-white/85">Remplissez les blocs ci-dessous de haut en bas, puis appuyez sur « Enregistrer ».</p>
+          <p className="mt-1 text-sm text-white/85">Remplissez les blocs ci-dessous de haut en bas. Tout s’enregistre automatiquement, et le « ? » à côté de chaque titre explique à quoi il sert.</p>
           <button
             type="button"
             className="mt-3 rounded-full bg-white/15 px-4 py-2 text-sm font-semibold backdrop-blur hover:bg-white/25"
@@ -76,7 +76,18 @@ export function PlanEditor({
 
       {/* Colonne gauche (grand écran) : ce que j'ai et ce qui rentre */}
       <div className="space-y-4 lg:space-y-5">
-      <Section icon={Landmark} tone="indigo" title="Liquidités" subtitle="Ce que vous avez aujourd’hui sur vos comptes courants (hors investissements)">
+      <Section
+        icon={Landmark}
+        tone="indigo"
+        title="Liquidités"
+        subtitle="Ce que vous avez aujourd’hui sur vos comptes courants (hors investissements)"
+        help={
+          <>
+            <p>L’argent disponible sur vos comptes courants aujourd’hui, celui avec lequel vous payez vos dépenses. Vos placements (crypto, actions…) se mettent à part, dans « Investissements ».</p>
+            <p>L’app part de ce solde, à cette date, pour calculer tous les mois suivants. Au début de chaque mois, elle vous demandera votre nouveau solde.</p>
+          </>
+        }
+      >
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Solde de mes comptes">
             <MoneyInput
@@ -104,6 +115,12 @@ export function PlanEditor({
         tone="emerald"
         title="Revenus mensuels"
         subtitle="Salaire, allocations… une ligne par période"
+        help={
+          <>
+            <p>Ce que vous recevez chaque mois : salaire, chômage, allocations…</p>
+            <p>Si un montant change à une date (ex : 1 200 € jusqu’en juin, puis 1 800 €), créez deux lignes : une « jusqu’à juin », une « à partir de juillet ».</p>
+          </>
+        }
         total={plan.incomePeriods.length ? `${plan.incomePeriods.length} ligne(s)` : undefined}
       >
         {plan.incomePeriods.map((it) => (
@@ -140,6 +157,7 @@ export function PlanEditor({
         tone="sky"
         title="Rentrées ponctuelles"
         subtitle="Prime, remboursement, vente…"
+        help={<p>De l’argent qui arrive une seule fois, à une date connue : une prime, un remboursement, la vente d’un objet…</p>}
         total={plan.oneOffIncomes.length ? `${plan.oneOffIncomes.length} ligne(s)` : undefined}
       >
         {plan.oneOffIncomes.map((it) => (
@@ -176,6 +194,13 @@ export function PlanEditor({
         tone="rose"
         title="Dépenses fixes"
         subtitle="Loyer, abonnements, électricité… tous les mois ou tous les N mois"
+        help={
+          <>
+            <p>Ce qui revient régulièrement : loyer, abonnements, courses, transport…</p>
+            <p>Pour une facture qui ne tombe pas tous les mois (électricité tous les 2 mois, assurance annuelle…), choisissez la fréquence puis un mois où elle tombe.</p>
+            <p>Le total en haut du bloc est l’équivalent par mois.</p>
+          </>
+        }
         total={plan.fixedExpenses.length ? `${formatEuros(fixedTotal, { round: true })}/mois` : undefined}
       >
         {plan.fixedExpenses.map((it) => (
@@ -240,6 +265,12 @@ export function PlanEditor({
         tone="amber"
         title="Grosses dépenses prévues"
         subtitle="Voiture, vacances, ordinateur… payées comptant ou en plusieurs fois"
+        help={
+          <>
+            <p>Une dépense importante à une date précise : voiture, vacances, dentiste…</p>
+            <p>Elle peut être payée en une fois ou en plusieurs : tous les mois, tous les 3 mois, ou à des dates libres que vous choisissez. Les montants peuvent être différents d’une échéance à l’autre.</p>
+          </>
+        }
         total={plan.plannedExpenses.length ? `${plan.plannedExpenses.length} ligne(s)` : undefined}
       >
         {plan.plannedExpenses.map((it) => (
@@ -253,25 +284,36 @@ export function PlanEditor({
         <AddButton onClick={() => add('plannedExpenses', newPlannedExpense(plan))}>Ajouter une grosse dépense</AddButton>
       </Section>
 
-      <Section icon={ShieldCheck} tone="violet" title="Matelas de sécurité" subtitle="Le solde en dessous duquel vous ne voulez jamais descendre">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Solde minimum">
-            <MoneyInput value={plan.safetyCushion} onChange={(safetyCushion) => setPlan((p) => ({ ...p, safetyCushion }))} />
-          </Field>
-          <Field label="Projection sur">
-            <select
-              className={inputClass}
-              value={plan.horizonMonths}
-              onChange={(e) =>
-                setPlan((p) => ({ ...p, horizonMonths: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 12 | 24) }))
-              }
-            >
-              <option value="auto">Jusqu’à ma dernière grosse dépense</option>
-              <option value={12}>12 mois</option>
-              <option value={24}>24 mois</option>
-            </select>
-          </Field>
-        </div>
+      <Section
+        icon={ShieldCheck}
+        tone="violet"
+        title="Matelas de sécurité"
+        subtitle="Le solde en dessous duquel vous ne voulez jamais descendre"
+        total={plan.safetyCushion ? formatEuros(plan.safetyCushion, { round: true }) : undefined}
+        help={
+          <>
+            <p>Le minimum que vous voulez toujours garder sur vos comptes pour les imprévus. On conseille souvent 1 à 3 mois de dépenses.</p>
+            <p>L’app vous prévient si votre solde risque de passer en dessous, et calcule « je peux dépenser » pour ne jamais y toucher.</p>
+          </>
+        }
+      >
+        <Field label="Solde minimum à garder">
+          <MoneyInput value={plan.safetyCushion} onChange={(safetyCushion) => setPlan((p) => ({ ...p, safetyCushion }))} />
+        </Field>
+        {fixedTotal > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 3].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPlan((p) => ({ ...p, safetyCushion: Math.round((fixedTotal * n) / 100) * 100 }))}
+                className="rounded-full bg-surface-2 px-3 py-1.5 text-xs font-semibold text-accent ring-1 ring-line hover:bg-accent-soft"
+              >
+                {n} mois de dépenses ({formatEuros(Math.round((fixedTotal * n) / 100) * 100, { round: true })})
+              </button>
+            ))}
+          </div>
+        )}
       </Section>
 
       </div>

@@ -235,6 +235,12 @@ export function InvestmentsSection({
       tone="emerald"
       title="Investissements"
       subtitle="Crypto, actions, ETF… valeur mise à jour en direct"
+      help={
+        <>
+          <p>Vos placements : crypto, actions, ETF… Indiquez la quantité détenue (ex : 0,15 BTC) : la valeur se met à jour toute seule avec les cours.</p>
+          <p>Ils ne comptent pas dans « je peux dépenser » : ils sont affichés à part, avec votre patrimoine total.</p>
+        </>
+      }
       total={list.length ? formatEuros(total, { round: true }) : undefined}
     >
       {list.map((inv) => (

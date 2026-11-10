@@ -83,6 +83,16 @@ export function LoginScreen() {
             />
           </Field>
         )}
+        {mode === 'signup' && (
+          <div className="rounded-xl bg-surface-2 px-3 py-2.5 text-xs leading-relaxed text-muted">
+            <p className="font-semibold text-ink">Vos données</p>
+            <p className="mt-0.5">
+              Elles sont privées : dans l’app, personne d’autre que vous ne peut les voir. Elles sont hébergées en Europe (Paris) par Supabase. La
+              personne qui administre ce service peut techniquement accéder à la base de données. Vous pouvez supprimer votre compte et toutes vos
+              données à tout moment depuis les réglages.
+            </p>
+          </div>
+        )}
         {error && <p className="rounded-xl bg-neg-soft px-3 py-2 text-sm text-neg">{error}</p>}
         {info && <p className="rounded-xl bg-pos-soft px-3 py-2 text-sm text-pos">{info}</p>}
         <button

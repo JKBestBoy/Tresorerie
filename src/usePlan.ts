@@ -205,5 +205,14 @@ export function usePlan(online: boolean) {
     [draft, save],
   )
 
+  // Enregistrement automatique : moins d'une seconde après la dernière modification
+  useEffect(() => {
+    if (!dirty || status === 'loading') return
+    const t = window.setTimeout(() => {
+      save()
+    }, 900)
+    return () => window.clearTimeout(t)
+  }, [draft, dirty, status, save])
+
   return { plan: draft, setPlan, commit, dirty, save, revert, status, message, dismissMessage: () => setMessage(null) }
 }

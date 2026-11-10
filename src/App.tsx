@@ -10,6 +10,7 @@ import { UpdateBanner } from './ui/UpdateBanner'
 import { PlanEditor } from './ui/PlanEditor'
 import { ResultsView } from './ui/ResultsView'
 import { HistoryView } from './ui/HistoryView'
+import { Onboarding } from './ui/Onboarding'
 import { useTheme, type ThemeChoice } from './ui/theme'
 import { usePlan, type SyncStatus } from './usePlan'
 import { useQuotes } from './sync/quotes'
@@ -46,12 +47,10 @@ function StatusPill({ status, dirty, online }: { status: SyncStatus; dirty: bool
   let icon = online ? <Cloud size={13} /> : <CloudOff size={13} />
   let text = online ? 'Synchronisé' : 'Sur cet appareil'
   let cls = 'bg-surface-2 text-muted'
-  if (dirty) {
-    icon = <PencilLine size={13} />
-    text = 'Non enregistré'
-    cls = 'bg-warn-soft text-warn'
-  } else if (status === 'loading' || status === 'saving') {
-    text = status === 'loading' ? 'Chargement…' : 'Enregistrement…'
+  if (dirty || status === 'saving') {
+    text = 'Enregistrement…'
+  } else if (status === 'loading') {
+    text = 'Chargement…'
   } else if (status === 'pending') {
     icon = <CloudOff size={13} />
     text = 'En attente d’envoi'
@@ -85,21 +84,26 @@ function Main({
   email: string | null
   theme: ReturnType<typeof useTheme>
 }) {
-  const { plan, setPlan, commit, dirty, save, revert, status, message, dismissMessage } = usePlan(online)
+  const { plan, setPlan, commit, dirty, status, message, dismissMessage } = usePlan(online)
   const live = useQuotes(plan?.investments)
   const [tab, setTab] = useState<Tab | null>(null)
   const [menu, setMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // Au premier lancement (aucune donnée), on ouvre directement la saisie
+  const isEmpty =
+    !!plan &&
+    plan.startingCapital.amount === 0 &&
+    plan.incomePeriods.length + plan.fixedExpenses.length + plan.plannedExpenses.length + plan.oneOffIncomes.length === 0 &&
+    (plan.investments?.length ?? 0) === 0
+  // Premier lancement (aucune donnée) : démarrage guidé, sauf si on l'a passé
+  const [skipOnboarding, setSkipOnboarding] = useState(false)
+  const onboarding = isEmpty && !skipOnboarding && status !== 'loading'
+
   useEffect(() => {
     if (plan && tab === null && status !== 'loading') {
-      const empty =
-        plan.startingCapital.amount === 0 &&
-        plan.incomePeriods.length + plan.fixedExpenses.length + plan.plannedExpenses.length + plan.oneOffIncomes.length === 0
-      setTab(empty ? 'data' : 'results')
+      setTab(isEmpty ? 'data' : 'results')
     }
-  }, [plan, tab, status])
+  }, [plan, tab, status, isEmpty])
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -116,9 +120,24 @@ function Main({
   }, [menu])
 
   async function logout() {
-    if (dirty && !window.confirm('Des modifications ne sont pas enregistrées. Se déconnecter quand même ?')) return
+    if (dirty && !window.confirm('Des modifications ne sont pas encore enregistrées. Se déconnecter quand même ?')) return
     await clearLocal()
     await supabase?.auth.signOut()
+  }
+
+  async function deleteAccount() {
+    const typed = window.prompt(
+      'Supprimer définitivement votre compte et toutes vos données (plan, historique, investissements) ?\n\nCette action est irréversible. Tapez SUPPRIMER pour confirmer.',
+    )
+    if (typed?.trim().toUpperCase() !== 'SUPPRIMER') return
+    const { error } = (await supabase?.functions.invoke('delete-account', { body: {} })) ?? { error: null }
+    if (error) {
+      window.alert('La suppression a échoué (connexion ?). Réessayez dans un instant.')
+      return
+    }
+    await clearLocal()
+    await supabase?.auth.signOut()
+    window.alert('Votre compte et vos données ont été supprimés.')
   }
 
   return (
@@ -175,6 +194,22 @@ function Main({
                     </button>
                   ))}
                 </div>
+                {plan && (
+                  <>
+                    <p className="mt-4 px-1 pb-2 text-xs font-semibold text-muted">Durée de projection</p>
+                    <select
+                      className="w-full rounded-2xl border border-line bg-surface-2 px-3 py-2 text-sm"
+                      value={plan.horizonMonths}
+                      onChange={(e) =>
+                        commit((p) => ({ ...p, horizonMonths: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 12 | 24) }))
+                      }
+                    >
+                      <option value="auto">Auto (dernière grosse dépense)</option>
+                      <option value={12}>12 mois</option>
+                      <option value={24}>24 mois</option>
+                    </select>
+                  </>
+                )}
                 {online && (
                   <>
                     <p className="mt-4 truncate px-1 text-xs text-muted">Connecté : {email}</p>
@@ -184,6 +219,9 @@ function Main({
                       onClick={logout}
                     >
                       <LogOut size={16} /> Se déconnecter
+                    </button>
+                    <button type="button" className="mt-2 w-full py-1.5 text-xs font-semibold text-neg hover:underline" onClick={deleteAccount}>
+                      Supprimer mon compte
                     </button>
                   </>
                 )}
@@ -202,38 +240,30 @@ function Main({
             </button>
           </div>
         )}
-        {plan && tab === 'history' && <HistoryView plan={plan} />}
-        {plan && tab === 'data' && <PlanEditor plan={plan} setPlan={setPlan} quotes={live.quotes} />}
-        {plan && tab === 'results' && (
-          <>
-            {dirty && (
-              <p className="mb-4 rounded-2xl bg-accent-soft p-3 text-sm text-accent-ink">
-                Les résultats tiennent compte de vos modifications non enregistrées.
-              </p>
-            )}
-            <ResultsView plan={plan} onEdit={() => setTab('data')} live={live} setPlan={commit} />
-          </>
+        {onboarding && (
+          <Onboarding
+            onFinish={(p) => {
+              setPlan(() => p)
+              setSkipOnboarding(true)
+              setTab('results')
+            }}
+            onSkip={(sample) => {
+              if (sample) setPlan(() => sample)
+              setSkipOnboarding(true)
+              setTab(sample ? 'results' : 'data')
+            }}
+          />
+        )}
+        {!onboarding && plan && tab === 'history' && <HistoryView plan={plan} />}
+        {!onboarding && plan && tab === 'data' && <PlanEditor plan={plan} setPlan={setPlan} quotes={live.quotes} />}
+        {!onboarding && plan && tab === 'results' && (
+          <ResultsView plan={plan} onEdit={() => setTab('data')} live={live} setPlan={commit} />
         )}
       </main>
 
       <div className="fixed inset-x-0 bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto max-w-md space-y-2">
-          {dirty && (
-            <div className="flex items-center gap-2 rounded-3xl bg-surface p-2 pl-4 shadow-xl ring-1 ring-line">
-              <span className="flex-1 text-sm font-semibold">Modifications non enregistrées</span>
-              <button type="button" onClick={revert} className="rounded-full px-3 py-2 text-sm font-semibold text-muted">
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={() => save()}
-                className="rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/30"
-              >
-                Enregistrer
-              </button>
-            </div>
-          )}
-          <nav className="grid grid-cols-3 gap-1 rounded-[1.75rem] bg-surface/90 p-1.5 shadow-xl ring-1 ring-line backdrop-blur-xl lg:hidden">
+          <nav className={`${onboarding ? 'hidden' : 'grid'} grid-cols-3 gap-1 rounded-[1.75rem] bg-surface/90 p-1.5 shadow-xl ring-1 ring-line backdrop-blur-xl lg:hidden`}>
             {TABS.map(([key, Icon, label]) => (
               <button
                 key={key}
