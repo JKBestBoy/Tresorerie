@@ -188,11 +188,6 @@ export function ResultsView({
             </p>
           </Help>
         </h2>
-        <p className="mb-2 px-1 text-xs text-muted">
-          ◯ Cochez ce qui est déjà compris dans votre solde du{' '}
-          {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))} (déjà passé sur
-          votre compte) · ✎ touchez un montant pour le corriger.
-        </p>
         {/* Téléphone : une carte par mois */}
         <div className="space-y-2.5 lg:hidden">
           {rows.map((r) => (
@@ -205,12 +200,11 @@ export function ResultsView({
               onToggle={(id) => toggle(r.month, id)}
               onAmount={(id, a) => setAmount(r.month, id, a)}
               onOpening={(a) => setOpeningOf(r.month, a)}
-              balance={plan.startingCapital}
             />
           ))}
         </div>
         {/* Grand écran : tableau compact */}
-        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} openAtStart={start} onToggle={toggle} onAmount={setAmount} onOpening={setOpeningOf} balance={plan.startingCapital} />
+        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} openAtStart={start} onToggle={toggle} onAmount={setAmount} onOpening={setOpeningOf} />
       </section>
 
       <BalanceChart rows={rows} cushion={plan.safetyCushion} />
@@ -364,23 +358,9 @@ function GapLine({ amount, estimated, month }: { amount: Cents; estimated?: bool
   )
 }
 
-/** Repère « Mon solde au JJ mois » (le dernier solde saisi), entre ce qui est passé et ce qui reste à venir. */
-function BalanceLine({ amount, date }: { amount: Cents; date: string }) {
-  const d = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(date + 'T12:00:00'))
-  return (
-    <div className="-mx-2 my-1 flex items-center justify-between gap-3 rounded-lg bg-accent-soft px-2 py-2 text-accent-ink">
-      <span className="min-w-0">
-        <span className="block font-semibold">Mon solde au {d}</span>
-        <span className="block text-[11px] leading-tight opacity-80">Saisi par vous · modifiable dans la carte violette</span>
-      </span>
-      <span className="num shrink-0 font-bold">{formatEuros(amount)}</span>
-    </div>
-  )
-}
+type DetailItem = { kind: 'flow'; d: MonthRow['details'][number] } | { kind: 'gap'; amount: Cents; estimated?: boolean }
 
-type DetailItem = { kind: 'flow'; d: MonthRow['details'][number] } | { kind: 'gap'; amount: Cents; estimated?: boolean } | { kind: 'balance' }
-
-/** Ordre d'affichage : mois en cours = passé, écart, solde saisi, puis à venir ; autres mois = tel quel. */
+/** Ordre d'affichage : mois en cours = passé, écart, puis à venir ; autres mois = tel quel. */
 function detailItems(r: MonthRow, isStart: boolean): DetailItem[] {
   if (!isStart) return r.details.map((d) => ({ kind: 'flow', d }))
   const gap = r.details.find((d) => d.kind === 'gap')
@@ -389,7 +369,6 @@ function detailItems(r: MonthRow, isStart: boolean): DetailItem[] {
     ...flows.filter((d) => d.settled).map((d) => ({ kind: 'flow' as const, d })),
     // Toujours affichée pour le mois en cours (même à 0, ou à compléter si le solde du 1er est inconnu)
     { kind: 'gap' as const, amount: gap?.amount ?? 0, estimated: r.openingEstimated },
-    { kind: 'balance' as const },
     ...flows.filter((d) => !d.settled).map((d) => ({ kind: 'flow' as const, d })),
   ]
 }
@@ -569,7 +548,6 @@ function MonthCard({
   onToggle,
   onAmount,
   onOpening,
-  balance,
 }: {
   row: MonthRow
   cushion: Cents
@@ -578,7 +556,6 @@ function MonthCard({
   onToggle: (id: string) => void
   onAmount: (id: string, amount: Cents | null) => void
   onOpening: (amount: Cents | null) => void
-  balance: { amount: Cents; date: string }
 }) {
   const [initiallyOpen] = useState(openAtStart)
   const overdrawn = r.closing < 0
@@ -628,10 +605,8 @@ function MonthCard({
             <li key={i} className="py-0.5">
               {it.kind === 'flow' ? (
                 <DetailLine d={it.d} onToggle={onToggle} onAmount={onAmount} />
-              ) : it.kind === 'gap' ? (
-                <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
               ) : (
-                <BalanceLine amount={balance.amount} date={balance.date} />
+                <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
               )}
             </li>
           ))}
@@ -649,7 +624,6 @@ function MonthTable({
   onToggle,
   onAmount,
   onOpening,
-  balance,
 }: {
   rows: MonthRow[]
   cushion: Cents
@@ -658,7 +632,6 @@ function MonthTable({
   onToggle: (month: string, id: string) => void
   onAmount: (month: string, id: string, amount: Cents | null) => void
   onOpening: (month: string, amount: Cents | null) => void
-  balance: { amount: Cents; date: string }
 }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set([openAtStart]))
   const toggle = (m: string) =>
@@ -729,10 +702,8 @@ function MonthTable({
                           <li key={i}>
                             {it.kind === 'flow' ? (
                               <DetailLine d={it.d} onToggle={(id) => onToggle(r.month, id)} onAmount={(id, a) => onAmount(r.month, id, a)} />
-                            ) : it.kind === 'gap' ? (
-                              <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
                             ) : (
-                              <BalanceLine amount={balance.amount} date={balance.date} />
+                              <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
                             )}
                           </li>
                         ))}
