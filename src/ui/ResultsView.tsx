@@ -360,16 +360,16 @@ function GapLine({ amount, estimated, month }: { amount: Cents; estimated?: bool
 
 type DetailItem = { kind: 'flow'; d: MonthRow['details'][number] } | { kind: 'gap'; amount: Cents; estimated?: boolean }
 
-/** Ordre d'affichage : mois en cours = passé, écart, puis à venir ; autres mois = tel quel. */
+/** Ordre d'affichage : mois en cours = passé, à venir, puis l'écart en dernier ; autres mois = tel quel. */
 function detailItems(r: MonthRow, isStart: boolean): DetailItem[] {
   if (!isStart) return r.details.map((d) => ({ kind: 'flow', d }))
   const gap = r.details.find((d) => d.kind === 'gap')
   const flows = r.details.filter((d) => d.kind !== 'gap')
   return [
     ...flows.filter((d) => d.settled).map((d) => ({ kind: 'flow' as const, d })),
-    // Toujours affichée pour le mois en cours (même à 0, ou à compléter si le solde du 1er est inconnu)
-    { kind: 'gap' as const, amount: gap?.amount ?? 0, estimated: r.openingEstimated },
     ...flows.filter((d) => !d.settled).map((d) => ({ kind: 'flow' as const, d })),
+    // En dernier, à part : toujours affichée pour le mois en cours (même à 0, ou à compléter si le solde du 1er est inconnu)
+    { kind: 'gap' as const, amount: gap?.amount ?? 0, estimated: r.openingEstimated },
   ]
 }
 
@@ -606,7 +606,9 @@ function MonthCard({
               {it.kind === 'flow' ? (
                 <DetailLine d={it.d} onToggle={onToggle} onAmount={onAmount} />
               ) : (
-                <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
+                <div className="-mx-1 mb-2.5 mt-2 rounded-xl bg-surface px-2 ring-1 ring-line">
+                  <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
+                </div>
               )}
             </li>
           ))}
@@ -703,7 +705,9 @@ function MonthTable({
                             {it.kind === 'flow' ? (
                               <DetailLine d={it.d} onToggle={(id) => onToggle(r.month, id)} onAmount={(id, a) => onAmount(r.month, id, a)} />
                             ) : (
-                              <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
+                              <div className="-mx-1 mb-2.5 mt-2 rounded-xl bg-surface px-2 ring-1 ring-line">
+                  <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
+                </div>
                             )}
                           </li>
                         ))}
