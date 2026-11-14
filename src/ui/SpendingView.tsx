@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeftRight, CheckCircle2, ChevronDown, ChevronRight, Undo2, X, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
+import { ArrowLeftRight, CheckCircle2, ChevronDown, FileText, FolderOpen, RefreshCw, Trash2, ChevronRight, Undo2, X, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
 import { merchantKey } from '../domain/categories'
 import { INVEST, NONE, REFUND, TRANSFER, analyzeMonth, isExpenseKind, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
 import { formatEuros } from '../domain/money'
@@ -56,14 +56,18 @@ function ImportSheet({
   onClose,
   onImport,
   accounts,
+  replacing,
 }: {
   onClose: () => void
   onImport: (txs: Transaction[]) => Promise<number>
   /** Comptes déjà utilisés dans les imports précédents */
   accounts: string[]
+  /** Relevé remplacé par ce nouvel import */
+  replacing?: Batch
 }) {
-  const [account, setAccount] = useState(accounts[0] ?? '')
+  const [account, setAccount] = useState(replacing?.account ?? accounts[0] ?? '')
   const [newAccount, setNewAccount] = useState(accounts.length === 0)
+  const [fileName, setFileName] = useState('')
   const [csvFile, setCsvFile] = useState<ParsedCsv | null>(null)
   const [csvRoles, setCsvRoles] = useState<ColumnRole[]>([])
   // Relevé PDF : lignes de texte + réglages de lecture
@@ -82,6 +86,7 @@ function ImportSheet({
 
   async function read(file: File) {
     setError(null)
+    setFileName(file.name)
     if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
       setReading(true)
       try {
@@ -121,7 +126,7 @@ function ImportSheet({
   const ok = roles.includes('date') && (roles.includes('amount') || roles.includes('debit') || roles.includes('credit'))
 
   return (
-    <Sheet title="Importer un relevé" onClose={onClose}>
+    <Sheet title={replacing ? `Remplacer « ${replacing.source} »` : 'Importer un relevé'} onClose={onClose}>
       {done !== null ? (
         <div className="mt-3 space-y-3">
           <p className="flex items-center gap-2 rounded-xl bg-pos-soft px-3 py-2.5 text-sm text-pos">
@@ -287,7 +292,9 @@ function ImportSheet({
                 setBusy(true)
                 setError(null)
                 try {
-                  setDone(await onImport(result!.transactions.map((t) => ({ ...t, account: account.trim() }))))
+                  const importId = `imp_${Date.now().toString(36)}`
+                  const source = fileName || 'Relevé'
+                  setDone(await onImport(result!.transactions.map((t) => ({ ...t, account: account.trim(), importId, source }))))
                 } catch {
                   setError('L’import a échoué (connexion ?). Réessayez.')
                 } finally {
@@ -301,6 +308,151 @@ function ImportSheet({
           </div>
         </div>
       )}
+    </Sheet>
+  )
+}
+
+/** Un relevé importé : ses opérations portent le même importId. */
+interface Batch {
+  id: string
+  source: string
+  account: string | null
+  from: string
+  to: string
+  count: number
+  /** Date d'import (connue pour les imports récents) */
+  importedAt: string | null
+  txs: Transaction[]
+}
+
+function batchesOf(list: Transaction[]): Batch[] {
+  const map = new Map<string, Batch>()
+  for (const t of list) {
+    const id = t.importId ?? `legacy-${t.account ?? 'compte'}`
+    let b = map.get(id)
+    if (!b) {
+      const ts = /^imp_([0-9a-z]+)$/.exec(id)
+      b = {
+        id,
+        source: t.source ?? 'Relevé importé',
+        account: t.account ?? null,
+        from: t.date,
+        to: t.date,
+        count: 0,
+        importedAt: ts ? new Date(parseInt(ts[1], 36)).toISOString().slice(0, 10) : null,
+        txs: [],
+      }
+      map.set(id, b)
+    }
+    b.count++
+    b.txs.push(t)
+    if (t.date < b.from) b.from = t.date
+    if (t.date > b.to) b.to = t.date
+  }
+  return [...map.values()].sort((x, y) => y.to.localeCompare(x.to) || (y.importedAt ?? '').localeCompare(x.importedAt ?? ''))
+}
+
+/** Liste des relevés importés ; touchez-en un pour voir ses opérations, le supprimer ou le remplacer. */
+function StatementsSheet({
+  batches,
+  onClose,
+  onDelete,
+  onReplace,
+}: {
+  batches: Batch[]
+  onClose: () => void
+  onDelete: (b: Batch) => Promise<void>
+  onReplace: (b: Batch) => void
+}) {
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const open = batches.find((b) => b.id === openId)
+  if (open)
+    return (
+      <Sheet title={open.source} onClose={onClose}>
+        <p className="mt-1 text-sm text-muted">
+          {open.account && <>{open.account} · </>}du {day(open.from)} au {day(open.to)} · {open.count} opération{open.count > 1 ? 's' : ''}
+          {open.importedAt && <> · importé le {day(open.importedAt)}</>}
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onReplace(open)}
+            className="flex items-center justify-center gap-1.5 rounded-full bg-surface-2 py-2.5 text-sm font-semibold ring-1 ring-line"
+          >
+            <RefreshCw size={15} /> Remplacer
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if (!window.confirm(`Supprimer « ${open.source} » et ses ${open.count} opérations ? Les classements faits pour ce commerçant (« Toujours pour… ») sont conservés.`)) return
+              setBusy(true)
+              try {
+                await onDelete(open)
+                setOpenId(null)
+              } catch {
+                window.alert('La suppression a échoué (connexion ?). Réessayez.')
+              } finally {
+                setBusy(false)
+              }
+            }}
+            className="flex items-center justify-center gap-1.5 rounded-full bg-neg-soft py-2.5 text-sm font-semibold text-neg disabled:opacity-40"
+          >
+            <Trash2 size={15} /> {busy ? 'Suppression…' : 'Supprimer'}
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-muted">« Remplacer » : choisissez le bon fichier, il prend la place de celui-ci (le classement des opérations identiques est gardé).</p>
+        <ul className="mt-3 divide-y divide-line text-sm">
+          {[...open.txs]
+            .sort((x, y) => y.date.localeCompare(x.date))
+            .map((t) => (
+              <li key={t.id} className="flex items-center justify-between gap-3 py-2">
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{t.label}</span>
+                  <span className="text-xs text-muted">{day(t.date)}</span>
+                </span>
+                <span className={`num shrink-0 font-bold ${t.amount < 0 ? 'text-neg' : 'text-pos'}`}>{exact(t.amount)}</span>
+              </li>
+            ))}
+        </ul>
+        <button type="button" onClick={() => setOpenId(null)} className="mt-4 w-full rounded-full bg-accent py-2.5 text-sm font-bold text-white dark:text-bg">
+          Retour aux relevés
+        </button>
+      </Sheet>
+    )
+  return (
+    <Sheet title="Mes relevés" onClose={onClose}>
+      {batches.length === 0 ? (
+        <p className="mt-2 text-sm text-muted">Aucun relevé importé pour l’instant.</p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {batches.map((b) => (
+            <li key={b.id}>
+              <button
+                type="button"
+                onClick={() => setOpenId(b.id)}
+                className="flex w-full items-center gap-3 rounded-2xl bg-surface-2 p-3 text-left ring-1 ring-line hover:bg-accent-soft"
+              >
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+                  <FileText size={19} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{b.source}</span>
+                  <span className="block truncate text-xs text-muted">
+                    {b.account && <>{b.account} · </>}
+                    {day(b.from)} → {day(b.to)} · {b.count} op.
+                  </span>
+                </span>
+                <ChevronRight size={16} className="shrink-0 text-muted" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" onClick={onClose} className="mt-4 w-full rounded-full bg-accent py-2.5 text-sm font-bold text-white dark:text-bg">
+        OK
+      </button>
     </Sheet>
   )
 }
@@ -636,6 +788,9 @@ export function SpendingView({
   quotes: Quotes
 }) {
   const [importing, setImporting] = useState(false)
+  const [showStatements, setShowStatements] = useState(false)
+  const [replacing, setReplacing] = useState<Batch | null>(null)
+  const batches = useMemo(() => batchesOf(tx.transactions), [tx.transactions])
   const [openId, setOpenId] = useState<string | null>(null)
   const [queue, setQueue] = useState<string[] | null>(null)
   const [applied, setApplied] = useState<string | null>(null)
@@ -734,6 +889,36 @@ export function SpendingView({
   const sheets = (
     <>
       {importing && <ImportSheet onClose={() => setImporting(false)} onImport={tx.add} accounts={accounts} />}
+      {replacing && (
+        <ImportSheet
+          replacing={replacing}
+          accounts={accounts}
+          onClose={() => {
+            setReplacing(null)
+            setShowStatements(false)
+          }}
+          onImport={async (txs) => {
+            const n = await tx.replaceImport(replacing.id, txs)
+            // Opérations disparues : on retire ce qu'elles avaient ajouté aux investissements
+            const kept = new Set(txs.map((t) => t.id))
+            const gone = replacing.txs.filter((t) => !kept.has(t.id) && plan.investLinks?.[t.id])
+            if (gone.length) setPlan((p) => gone.reduce((q, t) => unlinkTx(q, t.id), p))
+            return n
+          }}
+        />
+      )}
+      {showStatements && !replacing && (
+        <StatementsSheet
+          batches={batches}
+          onClose={() => setShowStatements(false)}
+          onReplace={(b) => setReplacing(b)}
+          onDelete={async (b) => {
+            await tx.removeImport(b.id)
+            const linked = b.txs.filter((t) => plan.investLinks?.[t.id])
+            if (linked.length) setPlan((p) => linked.reduce((q, t) => unlinkTx(q, t.id), p))
+          }}
+        />
+      )}
       {open && (
         <TxSheet
           key={open.id}
@@ -791,6 +976,15 @@ export function SpendingView({
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => setShowStatements(true)}
+              className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-surface text-muted ring-1 ring-line"
+              aria-label="Mes relevés"
+              title="Mes relevés"
+            >
+              <FolderOpen size={18} />
+            </button>
             <button
               type="button"
               onClick={() => setImporting(true)}

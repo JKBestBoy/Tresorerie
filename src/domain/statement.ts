@@ -14,6 +14,9 @@ export interface Transaction {
   category?: string
   /** Compte bancaire d'où vient l'opération (ex. « bunq ») */
   account?: string
+  /** Relevé d'où vient l'opération (un import = un relevé) et nom du fichier */
+  importId?: string
+  source?: string
   /** Ligne du plan rapprochée (dépense fixe, revenu, échéance) */
   matchedId?: string
 }
