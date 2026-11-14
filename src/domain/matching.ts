@@ -35,7 +35,7 @@ const words = (s: string) => normalizeText(s).split(/[^a-z0-9]+/).filter((w) => 
  * 1. lien appris pour ce commerçant ; 2. lien appris pour sa catégorie ;
  * 3. nom de la ligne retrouvé dans le libellé (ex. « Spotify ») ; 4. ligne qui porte le nom de la catégorie (« Courses »).
  */
-export function lineFor(t: Transaction, category: string, lines: PlanLine[], plan: Plan): PlanLine | undefined {
+export function lineFor(t: Transaction, category: string, lines: PlanLine[], plan: Plan, nameOnly = false): PlanLine | undefined {
   const links = plan.txRules?.links ?? {}
   const sameSign = (l: PlanLine) => Math.sign(l.planned) === Math.sign(t.amount) || l.planned === 0
   const byId = (id?: string) => (id ? lines.find((l) => l.id === id) : undefined)
@@ -51,7 +51,7 @@ export function lineFor(t: Transaction, category: string, lines: PlanLine[], pla
     // Le nom ne suffit pas si le montant n'a rien à voir (ex. « Apple » 9,99 € ≠ achat Apple Store 249 €)
     .filter((l) => Math.abs(t.amount) <= Math.abs(l.planned) * 2 + 1000)
     .sort((a, b) => Math.abs(Math.abs(a.planned) - Math.abs(t.amount)) - Math.abs(Math.abs(b.planned) - Math.abs(t.amount)))
-  if (byName[0]) return byName[0]
+  if (byName[0] || nameOnly) return byName[0]
   const cat = CATEGORIES.find((c) => c.id === category)
   if (cat) {
     const catWords = words(cat.label)
@@ -77,6 +77,32 @@ export function lineFor(t: Transaction, category: string, lines: PlanLine[], pla
 /** Valeur « non prévu » (aucune ligne) pour une opération ou un commerçant. */
 export const NONE = '__none__'
 
+/**
+ * Valeur « investissement / épargne » : l'argent quitte le compte mais reste dans le patrimoine
+ * (achat de crypto, versement sur un courtier, un livret…). Ni dépense ni rentrée.
+ */
+export const INVEST = '__invest__'
+
+const INVEST_KEYWORDS = [
+  'trade republic', 'traderepublic', 'binance', 'okx', 'coinbase', 'kraken', 'bitpanda', 'bitstack', 'crypto com', 'bitvavo', 'paymium',
+  'degiro', 'scalable', 'bourse direct', 'saxo', 'interactive brokers', 'etoro', 'xtb', 'freedom24', 'yomoni', 'nalo', 'linxea', 'ramify',
+  'goodvest', 'lucya', 'meilleurtaux placement', 'livret', 'epargne', 'savings', 'spaarrekening',
+]
+const tokens = (s: string) => ` ${normalizeText(s).replace(/[^a-z0-9]+/g, ' ').trim()} `
+
+/** L'opération ressemble-t-elle à un placement (courtier, plateforme crypto, livret, ou un de vos investissements) ? */
+export function looksLikeInvestment(t: Transaction, plan: Plan): boolean {
+  const text = tokens(`${t.label} ${t.description}`)
+  if (INVEST_KEYWORDS.some((k) => text.includes(` ${k} `))) return true
+  for (const inv of plan.investments ?? []) {
+    for (const name of [inv.account, inv.label]) {
+      const w = name ? tokens(name).trim() : ''
+      if (w.length >= 3 && text.includes(` ${w} `)) return true
+    }
+  }
+  return false
+}
+
 /** Lignes de « Mes données » auxquelles rattacher une opération (dépenses ou rentrées selon le signe). */
 export function lineOptions(plan: Plan, sign: number): { id: string; label: string }[] {
   if (sign < 0)
@@ -100,12 +126,14 @@ export function categoryOf(t: Transaction, plan: Plan): string {
  * 1. choix fait pour cette opération ; 2. choix fait pour ce commerçant ; 3. devinée (nom, famille).
  */
 export function assignedLine(t: Transaction, plan: Plan, monthLines: PlanLine[]): string | null {
-  const exists = (id: string) => lineOptions(plan, t.amount).some((o) => o.id === id)
+  const exists = (id: string) => id === INVEST || lineOptions(plan, t.amount).some((o) => o.id === id)
   if (t.category === NONE) return null
   if (t.category && exists(t.category)) return t.category
   const rule = plan.txRules?.links[`m:${merchantKey(t.label)}`]
   if (rule === NONE) return null
   if (rule && exists(rule)) return rule
+  // Placement reconnu : sauf si une de vos lignes porte ce nom (ex. dépense fixe « DCA Binance »)
+  if (looksLikeInvestment(t, plan)) return lineFor(t, categoryOf(t, plan), monthLines, plan, true)?.id ?? INVEST
   return lineFor(t, categoryOf(t, plan), monthLines, plan)?.id ?? null
 }
 
@@ -125,6 +153,9 @@ export interface MonthAnalysis {
   /** Dépenses rattachées à aucune ligne : là où se cache l'écart */
   unplanned: Transaction[]
   unplannedTotal: Cents // positif
+  /** Placé ce mois (net : versements − retraits), hors dépenses et rentrées */
+  invested: Cents
+  investTxs: Transaction[]
 }
 
 /** Analyse des opérations d'un mois, ligne par ligne de « Mes données ». */
@@ -149,10 +180,17 @@ export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): M
   const unplanned: Transaction[] = []
   let spent = 0
   let received = 0
+  let invested = 0
+  const investTxs: Transaction[] = []
   for (const t of txs) {
+    const id = assignedLine(t, plan, monthLines)
+    if (id === INVEST) {
+      invested -= t.amount
+      investTxs.push(t)
+      continue
+    }
     if (t.amount < 0) spent += -t.amount
     else received += t.amount
-    const id = assignedLine(t, plan, monthLines)
     const st = id ? lines.find((l) => l.id === id) : undefined
     if (st) {
       st.real += t.amount
@@ -167,6 +205,8 @@ export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): M
     lines,
     unplanned: unplanned.sort((x, y) => x.amount - y.amount),
     unplannedTotal: unplanned.reduce((sum, t) => sum - t.amount, 0),
+    invested,
+    investTxs: investTxs.sort((x, y) => x.amount - y.amount),
   }
 }
 

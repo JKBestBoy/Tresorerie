@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircle2, ChevronDown, FileUp, ListChecks, Receipt, Sparkles, Tag } from 'lucide-react'
+import { CheckCircle2, ChevronDown, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
 import { merchantKey } from '../domain/categories'
-import { NONE, analyzeMonth, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
+import { INVEST, NONE, analyzeMonth, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
 import { setActual, startMonthOf, toggleSettled, paidKeys, paidKey } from '../domain/projection'
@@ -342,7 +342,20 @@ function TxSheet({
         >
           Non prévu
         </button>
+        <button
+          type="button"
+          onClick={() => choose(INVEST)}
+          className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${
+            assigned === INVEST ? 'bg-pos text-white ring-pos' : 'bg-surface-2 text-pos ring-line hover:bg-pos-soft'
+          }`}
+        >
+          <PiggyBank size={13} /> Investissement / épargne
+        </button>
       </div>
+      <p className="mt-2 text-xs text-muted">
+        « Investissement / épargne » : argent placé (crypto, courtier, livret…) ou récupéré d’un placement. Il reste à vous, donc il n’est compté ni en
+        dépense ni en rentrée.
+      </p>
       {options.length === 0 && (
         <p className="mt-2 text-xs text-muted">Aucune ligne dans « Mes données » pour l’instant : ajoutez vos dépenses fixes (loyer, courses…) pour pouvoir classer.</p>
       )}
@@ -362,6 +375,7 @@ function TxSheet({
 }
 
 function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onOpen: () => void }) {
+  const invest = label === INVEST_LABEL
   return (
     <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 py-2.5 text-left text-sm hover:bg-surface-2">
       <span className="min-w-0 flex-1">
@@ -370,17 +384,19 @@ function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onO
           {day(t.date)}
           <span
             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              label ? 'bg-surface-2 text-ink ring-1 ring-line' : 'bg-warn-soft text-warn'
+              invest ? 'bg-pos-soft text-pos' : label ? 'bg-surface-2 text-ink ring-1 ring-line' : 'bg-warn-soft text-warn'
             }`}
           >
-            <Tag size={10} /> {label ?? 'Non classé'}
+            {invest ? <PiggyBank size={10} /> : <Tag size={10} />} {label ?? 'Non classé'}
           </span>
         </span>
       </span>
-      <span className={`num shrink-0 font-bold ${t.amount < 0 ? 'text-neg' : 'text-pos'}`}>{exact(t.amount)}</span>
+      <span className={`num shrink-0 font-bold ${invest ? 'text-muted' : t.amount < 0 ? 'text-neg' : 'text-pos'}`}>{exact(t.amount)}</span>
     </button>
   )
 }
+
+const INVEST_LABEL = 'Investissement'
 
 function Bar({ value, planned }: { value: number; planned: number }) {
   // Barre du réel ; trait = montant prévu ; rouge si dépassé
@@ -428,9 +444,10 @@ export function SpendingView({
     const m = new Map<string, string | null>()
     for (const l of a.lines) for (const t of l.txs) m.set(t.id, l.id)
     for (const t of a.unplanned) m.set(t.id, null)
+    for (const t of a.investTxs) m.set(t.id, INVEST)
     return m
   }, [a])
-  const labelOf = (id: string | null | undefined) => (id ? (a.lines.find((l) => l.id === id)?.label ?? null) : null)
+  const labelOf = (id: string | null | undefined) => (id === INVEST ? INVEST_LABEL : id ? (a.lines.find((l) => l.id === id)?.label ?? null) : null)
   const allOfMonth = useMemo(
     () => tx.transactions.filter((t) => t.date.startsWith(month)).sort((x, y) => y.date.localeCompare(x.date)),
     [tx.transactions, month],
@@ -534,6 +551,18 @@ export function SpendingView({
               </p>
               <p className="text-xs text-muted">{a.unplanned.length} opération(s) non prévue(s) ce mois-ci</p>
             </div>
+            {a.investTxs.length > 0 && (
+              <div className="mt-2 rounded-2xl bg-pos-soft px-3.5 py-3 ring-1 ring-pos/15">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-pos">
+                  <PiggyBank size={15} /> {a.invested >= 0 ? 'Placé' : 'Retiré de vos placements'} : <span className="num">{eur(Math.abs(a.invested))}</span>
+                  <Help title="Investissement / épargne">
+                    <p>L’argent envoyé vers vos placements (crypto, courtier, livret…) baisse vos liquidités, mais il reste à vous : il n’est donc pas compté dans « Dépensé » ni dans « Hors prévisions ».</p>
+                    <p>Pensez à mettre à jour la quantité de l’investissement concerné dans « Mes données » pour que votre patrimoine reste juste.</p>
+                  </Help>
+                </p>
+                <p className="text-xs text-muted">{a.investTxs.length} opération(s) · pas comptées comme dépenses, ça reste votre argent</p>
+              </div>
+            )}
           </section>
 
           {toSort.length > 0 && (
@@ -637,6 +666,23 @@ export function SpendingView({
               </ul>
             )}
           </section>
+
+          {/* Investissements */}
+          {a.investTxs.length > 0 && (
+            <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
+              <h2 className="flex items-center gap-1.5 font-bold">
+                <PiggyBank size={17} className="text-pos" /> Investi ce mois
+              </h2>
+              <p className="mb-1 text-xs text-muted">Moins de liquidités, mais toujours dans votre patrimoine · touchez pour corriger</p>
+              <ul className="divide-y divide-line">
+                {a.investTxs.map((t) => (
+                  <li key={t.id}>
+                    <TxRow t={t} label={INVEST_LABEL} onOpen={() => setOpenId(t.id)} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* Toutes les opérations */}
           <details className="group rounded-3xl bg-surface ring-1 ring-line">

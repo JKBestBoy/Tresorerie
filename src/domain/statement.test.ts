@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { categorize, merchantKey } from './categories'
-import { NONE, analyzeMonth, withLinkRule } from './matching'
+import { INVEST, NONE, analyzeMonth, withLinkRule } from './matching'
 import { detectColumns, parseAmount, parseCsv, parseDate, toTransactions } from './statement'
 import type { Plan } from './types'
 
@@ -134,5 +134,31 @@ describe('analyse du mois', () => {
     // Une ligne supprimée de « Mes données » n'est plus proposée : l'opération redevient non prévue
     a = analyzeMonth({ ...p, fixedExpenses: p.fixedExpenses.filter((f) => f.id !== 'cou') }, txs, '2026-11')
     expect(a.unplanned.map((t) => t.label)).toContain('UBER EATS')
+  })
+
+  it('investissements : ni dépense ni rentrée', () => {
+    const tx = (id: string, amount: number, label: string) => ({ id, date: '2026-11-10', amount, label, description: '' })
+    const p = { ...plan(), investments: [{ id: 'btc', label: 'Bitcoin', account: 'OKX', kind: 'crypto' as const, symbol: 'bitcoin', quantity: 0.1, manualUnitPrice: 0 }] }
+    const list = [
+      tx('a', -50000, 'Trade Republic Bank GmbH'),
+      tx('b', -20000, 'OKX EUROPE'),
+      tx('c', 10000, 'BINANCE'),
+      tx('d', -3456, 'CARREFOUR CITY'),
+      tx('e', -21000, 'Virement Livret A'), // même montant que le loyer, mais c'est de l'épargne
+      tx('f', -1500, 'PEAGE A6'), // « pea » ne doit pas être confondu avec un PEA
+    ]
+    const a = analyzeMonth(p, list, '2026-11')
+    expect(a.investTxs.map((t) => t.id).sort()).toEqual(['a', 'b', 'c', 'e'])
+    expect(a.invested).toBe(50000 + 20000 - 10000 + 21000)
+    expect(a.spent).toBe(3456 + 1500)
+    expect(a.received).toBe(0)
+    expect(a.lines.find((l) => l.id === 'loy')!.real).toBe(0)
+    // Une ligne à votre nom l'emporte (dépense fixe « OKX »)
+    const withDca = { ...p, fixedExpenses: [...p.fixedExpenses, { id: 'dca', label: 'OKX', monthlyAmount: 20000, startMonth: null, endMonth: null }] }
+    expect(analyzeMonth(withDca, list, '2026-11').lines.find((l) => l.id === 'dca')!.real).toBe(-20000)
+    // Et un choix manuel aussi, dans les deux sens
+    const forced = analyzeMonth(p, [{ ...list[3], category: INVEST }, { ...list[0], category: NONE }], '2026-11')
+    expect(forced.investTxs.map((t) => t.id)).toEqual(['d'])
+    expect(forced.unplanned.map((t) => t.id)).toEqual(['a'])
   })
 })
