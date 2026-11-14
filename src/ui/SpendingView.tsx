@@ -285,6 +285,7 @@ function TxSheet({
   // Dépense → lignes de dépense ; rentrée → dépenses qu'elle peut rembourser (les revenus sont proposés à part)
   const options = lineOptions(plan, -1)
 
+  const hues = huesOf(plan)
   const investments = plan.investments ?? []
   const link = plan.investLinks?.[t.id]
   const guess = guessInvestment(plan, `${t.label} ${t.description}`)
@@ -339,7 +340,7 @@ function TxSheet({
           <div className="mt-2 flex flex-wrap gap-1.5">
             {options.map((o) => (
               <Chip key={o.id} on={o.id === assigned} onClick={() => choose(o.id)}>
-                {o.label}
+                <Dot hue={hues.get(o.id)} /> {o.label}
               </Chip>
             ))}
             <Chip tone="neg" on={assigned === null && explicitNone(t, plan)} onClick={() => choose(NONE)}>
@@ -355,7 +356,7 @@ function TxSheet({
           <div className="mt-2 flex flex-wrap gap-1.5">
             {lineOptions(plan, 1).map((o) => (
               <Chip key={o.id} on={o.id === assigned} onClick={() => choose(o.id)}>
-                {o.label}
+                <Dot hue={hues.get(o.id)} /> {o.label}
               </Chip>
             ))}
             <Chip on={assigned === NONE} onClick={() => choose(NONE)}>
@@ -368,7 +369,7 @@ function TxSheet({
           <div className="mt-2 flex flex-wrap gap-1.5">
             {options.map((o) => (
               <Chip key={o.id} on={o.id === assigned} onClick={() => choose(o.id)}>
-                {o.label}
+                <Dot hue={hues.get(o.id)} /> {o.label}
               </Chip>
             ))}
             <Chip tone="neg" on={assigned === REFUND} onClick={() => choose(REFUND)}>
@@ -481,7 +482,7 @@ function Chip({ on, tone, onClick, children }: { on: boolean; tone?: 'neg' | 'po
 /** Choix « non prévu » / « autre rentrée » fait explicitement (pour l'opération ou son commerçant) */
 const explicitNone = (t: Transaction, plan: Plan) => t.category === NONE || plan.txRules?.links[`m:${merchantKey(t.label)}`] === NONE
 
-function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onOpen: () => void }) {
+function TxRow({ t, label, hue, neg, onOpen }: { t: Transaction; label: string | null; hue?: number; neg?: boolean; onOpen: () => void }) {
   const invest = !!label?.startsWith(INVEST_LABEL)
   return (
     <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 py-2.5 text-left text-sm hover:bg-surface-2">
@@ -491,8 +492,17 @@ function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onO
           {day(t.date)}
           <span
             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              invest ? 'bg-pos-soft text-pos' : label ? 'bg-surface-2 text-ink ring-1 ring-line' : 'bg-warn-soft text-warn'
+              invest
+                ? 'bg-pos-soft text-pos'
+                : !label
+                  ? 'bg-warn-soft text-warn'
+                  : neg
+                    ? 'bg-neg-soft text-neg'
+                    : hue !== undefined
+                      ? 'tag-hue'
+                      : 'bg-surface-2 text-ink ring-1 ring-line'
             }`}
+            style={hue !== undefined && !invest && !neg && label ? hueStyle(hue) : undefined}
           >
             {invest ? <PiggyBank size={10} /> : <Tag size={10} />} {label ?? 'Non classé'}
           </span>
@@ -504,6 +514,20 @@ function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onO
 }
 
 const INVEST_LABEL = 'Investissement'
+
+/** Teintes bien distinctes (en évitant le rouge, le vert et le jaune de « Non prévu », « Investissement » et « Non classé ») */
+const HUES = [215, 280, 180, 330, 25, 250, 195, 305, 85, 345, 230, 165]
+/** Teinte de chaque ligne de « Mes données », dans l'ordre où elles sont saisies */
+function huesOf(plan: Plan): Map<string, number> {
+  const ids = [...lineOptions(plan, -1), ...lineOptions(plan, 1)].map((o) => o.id)
+  return new Map(ids.map((id, i) => [id, HUES[i % HUES.length]]))
+}
+const hueStyle = (h: number) => ({ '--h': h }) as React.CSSProperties
+
+function Dot({ hue }: { hue?: number }) {
+  if (hue === undefined) return null
+  return <span className="dot-hue inline-block h-2 w-2 shrink-0 rounded-full" style={hueStyle(hue)} />
+}
 // Filtres spéciaux de la liste des opérations
 const ALL_IN = '__all_in__'
 const ALL_OUT = '__all_out__'
@@ -623,6 +647,7 @@ export function SpendingView({
     ]
   })()
   const shown = filter ? allOfMonth.filter((t) => matches(t, filter)) : allOfMonth
+  const hues = useMemo(() => huesOf(plan), [plan])
   const unlinked = a.investTxs.filter((t) => !plan.investLinks?.[t.id]).length
   const currentId = queue ? queue[0] : openId
   const open = tx.transactions.find((t) => t.id === currentId) ?? null
@@ -787,7 +812,8 @@ export function SpendingView({
                       className="-mx-2 block w-[calc(100%+1rem)] rounded-xl px-2 py-1 text-left enabled:hover:bg-surface-2"
                     >
                       <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-                        <span className="min-w-0 truncate font-semibold">
+                        <span className="flex min-w-0 items-center gap-1.5 truncate font-semibold">
+                          <Dot hue={hues.get(l.id)} />
                           {l.label} {l.txs.length > 0 && <span className="text-xs font-normal text-muted">· {l.txs.length}</span>}
                         </span>
                         <span className="num flex shrink-0 items-center">
@@ -881,7 +907,7 @@ export function SpendingView({
               <ul className="divide-y divide-line">
                 {a.unplanned.map((t) => (
                   <li key={t.id}>
-                    <TxRow t={t} label={labelOf(lineOf.get(t.id), t)} onOpen={() => setOpenId(t.id)} />
+                    <TxRow t={t} label={labelOf(lineOf.get(t.id), t)} hue={hues.get(lineOf.get(t.id) ?? '')} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
                   </li>
                 ))}
               </ul>
@@ -948,7 +974,7 @@ export function SpendingView({
                 <ul className="mt-1 divide-y divide-line">
                   {shown.map((t) => (
                     <li key={t.id}>
-                      <TxRow t={t} label={labelOf(lineOf.get(t.id), t)} onOpen={() => setOpenId(t.id)} />
+                      <TxRow t={t} label={labelOf(lineOf.get(t.id), t)} hue={hues.get(lineOf.get(t.id) ?? '')} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
                     </li>
                   ))}
                 </ul>

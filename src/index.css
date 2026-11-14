@@ -76,3 +76,19 @@ details > summary::-webkit-details-marker {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
+
+/* Étiquettes de catégorie : une teinte par ligne de « Mes données » (--h), lisible en clair comme en sombre */
+.tag-hue {
+  background: hsl(var(--h) 85% 93%);
+  color: hsl(var(--h) 60% 32%);
+}
+.dark .tag-hue {
+  background: hsl(var(--h) 35% 20%);
+  color: hsl(var(--h) 75% 78%);
+}
+.dot-hue {
+  background: hsl(var(--h) 70% 52%);
+}
+.dark .dot-hue {
+  background: hsl(var(--h) 65% 62%);
+}
