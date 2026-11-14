@@ -3,6 +3,7 @@ import { AlertTriangle, Circle, ArrowDownLeft, ArrowUpRight, CalendarClock, Chec
 import { investmentsSummary } from '../domain/investments'
 import type { useQuotes } from '../sync/quotes'
 import { NewMonthCard } from './Pointage'
+import { BalanceUpdate } from './BalanceUpdate'
 import { Help } from './Help'
 import { BalanceChart } from './BalanceChart'
 import { MoneyInput } from './inputs'
@@ -90,7 +91,8 @@ export function ResultsView({
             Il manque déjà <span className="num font-semibold">{formatEuros(free.alreadyShort)}</span> pour respecter le matelas.
           </p>
         )}
-        <div className="relative mt-5 grid grid-cols-2 gap-3 border-t border-white/20 pt-4 text-sm">
+        <BalanceUpdate plan={plan} setPlan={setPlan} />
+        <div className="relative mt-4 grid grid-cols-2 gap-3 border-t border-white/20 pt-4 text-sm">
           <div>
             <p className="text-white/70">Solde fin {monthLabel(thisMonth.month).split(' ')[0]}</p>
             <p className="num text-lg font-bold">{eur(thisMonth.closing)}</p>
@@ -177,7 +179,9 @@ export function ResultsView({
           <Help title="Mois par mois">
             <p>Pour chaque mois : ce qui rentre, ce qui sort, ce qu’il reste, et votre solde en fin de mois. Touchez un mois pour voir le détail.</p>
             <p>
-              <strong className="text-ink">Cochez le rond</strong> d’une ligne quand elle est passée sur votre compte : l’app ne la compte plus, puisqu’elle est déjà dans votre solde.
+              <strong className="text-ink">Cochez le rond</strong> d’une ligne quand elle est déjà passée sur votre compte, donc déjà comprise dans
+              le solde que vous avez saisi : l’app ne la compte plus. Le plus simple : mettez à jour votre solde (carte violette en haut), puis cochez
+              ce qui est déjà passé ce mois-ci.
             </p>
             <p>
               <strong className="text-ink">Touchez un montant</strong> (✎) pour indiquer le vrai montant de ce mois-là, par exemple des courses moins chères que prévu. Le « solde début de mois » se corrige de la même façon.
@@ -185,9 +189,9 @@ export function ResultsView({
           </Help>
         </h2>
         <p className="mb-2 px-1 text-xs text-muted">
-          ◯ Cochez ce qui est passé sur votre compte depuis votre solde du{' '}
-          {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))} · ✎ touchez un montant
-          pour le corriger.
+          ◯ Cochez ce qui est déjà compris dans votre solde du{' '}
+          {new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(plan.startingCapital.date + 'T12:00:00'))} (déjà passé sur
+          votre compte) · ✎ touchez un montant pour le corriger.
         </p>
         {/* Téléphone : une carte par mois */}
         <div className="space-y-2.5 lg:hidden">

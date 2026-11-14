@@ -6,10 +6,11 @@ import {
   newIncomePeriod,
   newOneOffIncome,
   newPlannedExpense,
+  todayISO,
 } from '../domain/defaults'
 import { formatEuros } from '../domain/money'
 import { addMonths, monthLabel, monthOf, monthShortLabel } from '../domain/month'
-import { installmentAmounts, installmentSchedule, splitInstallments, startMonthOf } from '../domain/projection'
+import { installmentAmounts, installmentSchedule, splitInstallments, startMonthOf, withNewBalance } from '../domain/projection'
 import { samplePlan } from '../domain/sample'
 import type { Quotes } from '../domain/investments'
 import type { Cents, Plan, PlannedExpense } from '../domain/types'
@@ -89,10 +90,10 @@ export function PlanEditor({
         }
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Solde de mes comptes">
+          <Field label="Solde de mes comptes" hint="Quand vous changez le solde, la date passe à aujourd’hui">
             <MoneyInput
               value={plan.startingCapital.amount}
-              onChange={(amount) => setPlan((p) => ({ ...p, startingCapital: { ...p.startingCapital, amount } }))}
+              onChange={(amount) => setPlan((p) => withNewBalance(p, amount, todayISO()))}
             />
           </Field>
           <Field label="À la date du">
