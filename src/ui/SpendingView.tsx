@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircle2, ChevronDown, ChevronRight, Undo2, X, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
+import { ArrowLeftRight, CheckCircle2, ChevronDown, ChevronRight, Undo2, X, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
 import { merchantKey } from '../domain/categories'
-import { INVEST, NONE, REFUND, analyzeMonth, isExpenseKind, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
+import { INVEST, NONE, REFUND, TRANSFER, analyzeMonth, isExpenseKind, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
 import { setActual, startMonthOf, toggleSettled, paidKeys, paidKey } from '../domain/projection'
@@ -52,7 +52,18 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 /** Import d'un relevé : lecture, colonnes reconnues (modifiables), aperçu, import. */
-function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (txs: Transaction[]) => Promise<number> }) {
+function ImportSheet({
+  onClose,
+  onImport,
+  accounts,
+}: {
+  onClose: () => void
+  onImport: (txs: Transaction[]) => Promise<number>
+  /** Comptes déjà utilisés dans les imports précédents */
+  accounts: string[]
+}) {
+  const [account, setAccount] = useState(accounts[0] ?? '')
+  const [newAccount, setNewAccount] = useState(accounts.length === 0)
   const [csvFile, setCsvFile] = useState<ParsedCsv | null>(null)
   const [csvRoles, setCsvRoles] = useState<ColumnRole[]>([])
   // Relevé PDF : lignes de texte + réglages de lecture
@@ -225,6 +236,44 @@ function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (tx
               </ul>
             </div>
           )}
+          {result && ok && (
+            <div>
+              <p className="mb-1.5 text-xs font-semibold text-muted">De quel compte est ce relevé ?</p>
+              <div className="flex flex-wrap gap-1.5">
+                {accounts.map((acc) => (
+                  <Chip
+                    key={acc}
+                    on={!newAccount && account === acc}
+                    onClick={() => {
+                      setNewAccount(false)
+                      setAccount(acc)
+                    }}
+                  >
+                    {acc}
+                  </Chip>
+                ))}
+                {accounts.length > 0 && (
+                  <Chip
+                    on={newAccount}
+                    onClick={() => {
+                      setNewAccount(true)
+                      setAccount('')
+                    }}
+                  >
+                    + Autre compte
+                  </Chip>
+                )}
+              </div>
+              {newAccount && (
+                <input
+                  className={`${inputClass} mt-2 text-sm`}
+                  placeholder="Nom du compte (ex. Banque Postale)"
+                  value={account}
+                  onChange={(e) => setAccount(e.target.value)}
+                />
+              )}
+            </div>
+          )}
           {!ok && <p className="rounded-xl bg-warn-soft px-3 py-2 text-warn">Indiquez au moins la colonne Date et la colonne Montant.</p>}
           {error && <p className="rounded-xl bg-neg-soft px-3 py-2 text-neg">{error}</p>}
           <div className="flex gap-2">
@@ -233,12 +282,12 @@ function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (tx
             </button>
             <button
               type="button"
-              disabled={!ok || busy || !result?.transactions.length}
+              disabled={!ok || busy || !result?.transactions.length || !account.trim()}
               onClick={async () => {
                 setBusy(true)
                 setError(null)
                 try {
-                  setDone(await onImport(result!.transactions))
+                  setDone(await onImport(result!.transactions.map((t) => ({ ...t, account: account.trim() }))))
                 } catch {
                   setError('L’import a échoué (connexion ?). Réessayez.')
                 } finally {
@@ -383,6 +432,9 @@ function TxSheet({
         <Chip tone="pos" on={assigned === INVEST} onClick={() => choose(INVEST)}>
           <PiggyBank size={13} /> Investissement / épargne
         </Chip>
+        <Chip on={assigned === TRANSFER} onClick={() => choose(TRANSFER)}>
+          <ArrowLeftRight size={13} /> Virement entre mes comptes
+        </Chip>
       </div>
       {assigned === INVEST && (
         <div className="mt-3 rounded-2xl bg-pos-soft p-3 ring-1 ring-pos/15">
@@ -429,8 +481,8 @@ function TxSheet({
         </div>
       )}
       <p className="mt-2 text-xs text-muted">
-        « Investissement / épargne » : argent placé (crypto, courtier, livret…) ou récupéré d’un placement. Il reste à vous, donc il n’est compté ni en
-        dépense ni en rentrée.
+        « Investissement / épargne » : argent placé (crypto, courtier, livret…) ou récupéré d’un placement. « Virement entre mes comptes » : l’argent
+        passe d’un de vos comptes à un autre (recharge, virement à vous-même). Dans les deux cas, ce n’est ni une dépense ni une rentrée.
       </p>
       {options.length === 0 && (
         <p className="mt-2 text-xs text-muted">Aucune ligne dans « Mes données » pour l’instant : ajoutez vos dépenses fixes (loyer, courses…) pour pouvoir classer.</p>
@@ -482,7 +534,21 @@ function Chip({ on, tone, onClick, children }: { on: boolean; tone?: 'neg' | 'po
 /** Choix « non prévu » / « autre rentrée » fait explicitement (pour l'opération ou son commerçant) */
 const explicitNone = (t: Transaction, plan: Plan) => t.category === NONE || plan.txRules?.links[`m:${merchantKey(t.label)}`] === NONE
 
-function TxRow({ t, label, hue, neg, onOpen }: { t: Transaction; label: string | null; hue?: number; neg?: boolean; onOpen: () => void }) {
+function TxRow({
+  t,
+  label,
+  hue,
+  neg,
+  showAccount,
+  onOpen,
+}: {
+  t: Transaction
+  label: string | null
+  hue?: number
+  neg?: boolean
+  showAccount?: boolean
+  onOpen: () => void
+}) {
   const invest = !!label?.startsWith(INVEST_LABEL)
   return (
     <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 py-2.5 text-left text-sm hover:bg-surface-2">
@@ -490,6 +556,7 @@ function TxRow({ t, label, hue, neg, onOpen }: { t: Transaction; label: string |
         <span className="block truncate font-semibold">{t.label}</span>
         <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
           {day(t.date)}
+          {showAccount && t.account && <span className="truncate">· {t.account}</span>}
           <span
             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
               invest
@@ -583,8 +650,12 @@ export function SpendingView({
   }
   const months = useMemo(() => [...new Set(tx.transactions.map((t) => t.date.slice(0, 7)))].sort().reverse(), [tx.transactions])
   const [chosen, setChosen] = useState<string | null>(null)
+  // Comptes connus (bunq, Banque Postale…) et compte affiché (null = tous)
+  const accounts = useMemo(() => [...new Set(tx.transactions.map((t) => t.account).filter((x): x is string => !!x))].sort(), [tx.transactions])
+  const [acct, setAcct] = useState<string | null>(null)
+  const account = acct && accounts.includes(acct) ? acct : null
   const month = chosen && months.includes(chosen) ? chosen : (months[0] ?? monthOf(new Date()))
-  const a = useMemo(() => analyzeMonth(plan, tx.transactions, month), [plan, tx.transactions, month])
+  const a = useMemo(() => analyzeMonth(plan, tx.transactions, month, account), [plan, tx.transactions, month, account])
   // Ligne de chaque opération du mois (null = non prévue)
   const lineOf = useMemo(() => {
     const m = new Map<string, string | null>()
@@ -592,6 +663,7 @@ export function SpendingView({
     for (const t of a.unplanned) m.set(t.id, t.amount > 0 ? REFUND : null)
     for (const t of a.otherIn) m.set(t.id, explicitNone(t, plan) ? NONE : null)
     for (const t of a.investTxs) m.set(t.id, INVEST)
+    for (const t of a.transfers) m.set(t.id, TRANSFER)
     return m
   }, [a, plan])
   const lineLabel = (id: string) => a.lines.find((l) => l.id === id)?.label ?? null
@@ -603,14 +675,18 @@ export function SpendingView({
       return inv ? `${INVEST_LABEL} → ${inv.label}` : INVEST_LABEL
     }
     if (id === REFUND) return 'Remb. non prévu'
+    if (id === TRANSFER) return 'Virement interne'
     if (id === NONE) return 'Autre rentrée'
     const l = a.lines.find((x) => x.id === id)
     if (!l) return null
     return t && t.amount > 0 && isExpenseKind(l.kind) ? `Remb. ${l.label}` : l.label
   }
   const allOfMonth = useMemo(
-    () => tx.transactions.filter((t) => t.date.startsWith(month)).sort((x, y) => y.date.localeCompare(x.date)),
-    [tx.transactions, month],
+    () =>
+      tx.transactions
+        .filter((t) => t.date.startsWith(month) && (!account || t.account === account))
+        .sort((x, y) => y.date.localeCompare(x.date)),
+    [tx.transactions, month, account],
   )
   // À classer : dépenses et rentrées rattachées à rien, sans choix explicite
   const toSort = [...a.unplanned.filter((t) => t.amount < 0), ...a.otherIn].filter((t) => !explicitNone(t, plan))
@@ -628,7 +704,9 @@ export function SpendingView({
       ? 'Toutes les entrées'
       : id === ALL_OUT
         ? 'Toutes les sorties'
-        : id === NONE
+        : id === TRANSFER
+          ? 'Virements entre mes comptes'
+          : id === NONE
           ? 'Non prévu'
           : id === OTHER_IN
             ? 'Autres rentrées'
@@ -639,7 +717,7 @@ export function SpendingView({
   const filterOptions = (() => {
     const counts = new Map<string, number>()
     for (const t of allOfMonth) counts.set(tagOf(t), (counts.get(tagOf(t)) ?? 0) + 1)
-    const order = [...a.lines.map((l) => l.id), OTHER_IN, INVEST, NONE]
+    const order = [...a.lines.map((l) => l.id), OTHER_IN, INVEST, TRANSFER, NONE]
     return [
       { id: ALL_IN, label: filterLabel(ALL_IN), count: allOfMonth.filter((t) => t.amount > 0).length },
       { id: ALL_OUT, label: filterLabel(ALL_OUT), count: allOfMonth.filter((t) => t.amount < 0).length },
@@ -655,7 +733,7 @@ export function SpendingView({
 
   const sheets = (
     <>
-      {importing && <ImportSheet onClose={() => setImporting(false)} onImport={tx.add} />}
+      {importing && <ImportSheet onClose={() => setImporting(false)} onImport={tx.add} accounts={accounts} />}
       {open && (
         <TxSheet
           key={open.id}
@@ -721,6 +799,20 @@ export function SpendingView({
               <FileUp size={16} /> Importer
             </button>
           </div>
+          {accounts.length > 1 && (
+            <div className="flex gap-1 overflow-x-auto rounded-2xl bg-surface-2 p-1 text-sm font-semibold">
+              {[null, ...accounts].map((acc) => (
+                <button
+                  key={acc ?? 'all'}
+                  type="button"
+                  onClick={() => setAcct(acc)}
+                  className={`shrink-0 flex-1 whitespace-nowrap rounded-xl px-3 py-1.5 ${account === acc ? 'bg-surface text-accent shadow-sm' : 'text-muted'}`}
+                >
+                  {acc ?? 'Tous les comptes'}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Synthèse */}
           <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
@@ -771,6 +863,20 @@ export function SpendingView({
               </div>
             )}
           </section>
+
+          {a.transfers.length > 0 && (
+            <button
+              type="button"
+              onClick={() => showTag(TRANSFER)}
+              className="flex w-full items-center gap-2 rounded-2xl bg-surface px-4 py-2.5 text-left text-xs text-muted ring-1 ring-line"
+            >
+              <ArrowLeftRight size={15} className="shrink-0" />
+              <span className="flex-1">
+                {a.transfers.length} virement{a.transfers.length > 1 ? 's' : ''} entre vos comptes, ignoré{a.transfers.length > 1 ? 's' : ''} dans les totaux
+              </span>
+              <ChevronRight size={14} />
+            </button>
+          )}
 
           {toSort.length > 0 && (
             <section className="flex items-center gap-3 rounded-3xl bg-warn-soft p-4 ring-1 ring-warn/20">
@@ -907,7 +1013,7 @@ export function SpendingView({
               <ul className="divide-y divide-line">
                 {a.unplanned.map((t) => (
                   <li key={t.id}>
-                    <TxRow t={t} label={labelOf(lineOf.get(t.id), t)} hue={hues.get(lineOf.get(t.id) ?? '')} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
+                    <TxRow t={t} showAccount={accounts.length > 1} label={labelOf(lineOf.get(t.id), t)} hue={hues.get(lineOf.get(t.id) ?? '')} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
                   </li>
                 ))}
               </ul>
@@ -924,7 +1030,7 @@ export function SpendingView({
               <ul className="divide-y divide-line">
                 {a.investTxs.map((t) => (
                   <li key={t.id}>
-                    <TxRow t={t} label={labelOf(INVEST, t)} onOpen={() => setOpenId(t.id)} />
+                    <TxRow t={t} showAccount={accounts.length > 1} label={labelOf(INVEST, t)} onOpen={() => setOpenId(t.id)} />
                   </li>
                 ))}
               </ul>
@@ -974,7 +1080,7 @@ export function SpendingView({
                 <ul className="mt-1 divide-y divide-line">
                   {shown.map((t) => (
                     <li key={t.id}>
-                      <TxRow t={t} label={labelOf(lineOf.get(t.id), t)} hue={hues.get(lineOf.get(t.id) ?? '')} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
+                      <TxRow t={t} showAccount={accounts.length > 1} label={labelOf(lineOf.get(t.id), t)} hue={hues.get(lineOf.get(t.id) ?? '')} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
                     </li>
                   ))}
                 </ul>

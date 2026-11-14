@@ -11,6 +11,7 @@ interface Row {
   label: string
   description: string
   category: string | null
+  account: string | null
 }
 
 const fromRow = (r: Row): Transaction => ({
@@ -20,6 +21,7 @@ const fromRow = (r: Row): Transaction => ({
   label: r.label,
   description: r.description,
   ...(r.category ? { category: r.category } : {}),
+  ...(r.account ? { account: r.account } : {}),
 })
 
 /** Opérations importées : en ligne (Supabase) si connecté, sinon sur l'appareil. */
@@ -36,7 +38,7 @@ export function useTransactions(online: boolean) {
         for (let from = 0; ; from += 1000) {
           const { data, error } = await supabase
             .from('transactions')
-            .select('id, date, amount, label, description, category')
+            .select('id, date, amount, label, description, category, account')
             .order('date', { ascending: false })
             .range(from, from + 999)
           if (error) throw error
@@ -69,6 +71,7 @@ export function useTransactions(online: boolean) {
             label: t.label,
             description: t.description,
             category: t.category ?? null,
+            account: t.account ?? null,
           }))
           const { error } = await supabase.from('transactions').upsert(chunk, { onConflict: 'user_id,id', ignoreDuplicates: true })
           if (error) throw error

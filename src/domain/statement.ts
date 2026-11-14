@@ -12,6 +12,8 @@ export interface Transaction {
   /** Libellé complet de l'opération */
   description: string
   category?: string
+  /** Compte bancaire d'où vient l'opération (ex. « bunq ») */
+  account?: string
   /** Ligne du plan rapprochée (dépense fixe, revenu, échéance) */
   matchedId?: string
 }

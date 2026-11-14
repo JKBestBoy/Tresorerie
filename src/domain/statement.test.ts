@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { categorize, merchantKey } from './categories'
-import { INVEST, NONE, REFUND, analyzeMonth, withLinkRule } from './matching'
+import { INVEST, NONE, REFUND, TRANSFER, analyzeMonth, findTransfers, withLinkRule } from './matching'
 import { detectColumns, parseAmount, parseCsv, parseDate, toTransactions } from './statement'
 import type { Plan } from './types'
 
@@ -180,5 +180,31 @@ describe('analyse du mois', () => {
     expect(a.unplannedTotal).toBe(4000)
     expect(a.unplanned.map((t) => t.id)).toEqual(['r', 'a'])
     expect(a.otherIn.map((t) => t.id).sort()).toEqual(['x', 'y'])
+  })
+
+  it('plusieurs comptes : virements entre mes comptes ignorés, filtre par compte', () => {
+    const tx = (id: string, date: string, amount: number, label: string, account: string, category?: string) => ({ id, date, amount, label, description: '', account, category })
+    const list = [
+      tx('bp1', '2026-11-04', -50000, 'VIR SEPA WAFFA', 'Banque Postale'), // part vers bunq…
+      tx('bq1', '2026-11-05', 50000, 'WAFFA', 'bunq'), // … arrive le lendemain
+      tx('bq2', '2026-11-03', 8900, 'Adyen Top Up by Apple Pay', 'bunq'), // recharge : reconnue par son libellé
+      tx('bp2', '2026-11-06', -21000, 'SCI DUPONT', 'Banque Postale'), // loyer payé depuis l'autre compte
+      tx('bq3', '2026-11-07', 3000, 'MARIE', 'bunq'),
+      tx('bp3', '2026-11-20', -3000, 'VIR MARIE', 'Banque Postale'), // même montant mais 13 jours après : pas un virement interne
+      tx('bq4', '2026-11-08', 20000, 'VIR', 'bunq', NONE), // choix manuel conservé
+    ]
+    expect([...findTransfers(list)].sort()).toEqual(['bp1', 'bq1'])
+    const a = analyzeMonth(plan(), list, '2026-11')
+    expect(a.transfers.map((t) => t.id).sort()).toEqual(['bp1', 'bq1', 'bq2'])
+    expect(a.spent).toBe(21000 + 3000)
+    expect(a.received).toBe(3000 + 20000)
+    expect(a.lines.find((l) => l.id === 'loy')!.real).toBe(-21000)
+    // Vue d'un seul compte : le virement reste reconnu même si l'autre moitié est sur l'autre compte
+    const bunq = analyzeMonth(plan(), list, '2026-11', 'bunq')
+    expect(bunq.transfers.map((t) => t.id).sort()).toEqual(['bq1', 'bq2'])
+    expect(bunq.spent).toBe(0)
+    // Classement manuel
+    const forced = analyzeMonth(plan(), [{ ...list[4], category: TRANSFER }], '2026-11')
+    expect(forced.transfers).toHaveLength(1)
   })
 })

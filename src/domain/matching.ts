@@ -86,6 +86,32 @@ export const INVEST = '__invest__'
 /** Rentrée qui rembourse une dépense non prévue (ex. un ami vous rend sa part) : déduite du « non prévu ». */
 export const REFUND = '__refund__'
 
+/** Virement entre deux de vos comptes : ni dépense, ni rentrée (l'argent ne fait que changer de compte). */
+export const TRANSFER = '__transfer__'
+
+const TRANSFER_KEYWORDS = ['top up', 'topup', 'virement interne', 'compte a compte', 'own account', 'eigen rekening', 'entre mes comptes']
+
+/**
+ * Virements entre vos comptes retrouvés dans les relevés : une sortie sur un compte et une entrée
+ * du même montant sur un autre compte, à 4 jours près.
+ */
+export function findTransfers(all: Transaction[]): Set<string> {
+  const out = new Set<string>()
+  const ins = all.filter((t) => t.amount > 0 && t.account)
+  const days = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86400000
+  for (const t of all) {
+    if (t.amount >= 0 || !t.account || out.has(t.id)) continue
+    const match = ins.find((i) => !out.has(i.id) && i.account !== t.account && i.amount === -t.amount && Math.abs(days(i.date) - days(t.date)) <= 4)
+    if (match) {
+      out.add(t.id)
+      out.add(match.id)
+    }
+  }
+  return out
+}
+
+const looksLikeTransfer = (t: Transaction) => TRANSFER_KEYWORDS.some((k) => tokens(`${t.label} ${t.description}`).includes(` ${k} `))
+
 /** Une ligne de dépense (et non de revenu) ? */
 export const isExpenseKind = (kind: string) => kind === 'fixedExpense' || kind === 'plannedExpense'
 
@@ -139,14 +165,15 @@ export function categoryOf(t: Transaction, plan: Plan): string {
  * Ligne de « Mes données » d'une opération, ou null (non prévue) :
  * 1. choix fait pour cette opération ; 2. choix fait pour ce commerçant ; 3. devinée (nom, famille).
  */
-export function assignedLine(t: Transaction, plan: Plan, monthLines: PlanLine[]): string | null {
-  const exists = (id: string) => id === INVEST || (id === REFUND && t.amount > 0) || targetsFor(plan, t.amount).some((o) => o.id === id)
+export function assignedLine(t: Transaction, plan: Plan, monthLines: PlanLine[], transfers?: Set<string>): string | null {
+  const exists = (id: string) => id === INVEST || id === TRANSFER || (id === REFUND && t.amount > 0) || targetsFor(plan, t.amount).some((o) => o.id === id)
   // Rentrée classée « autre rentrée » (NONE) : on la garde telle quelle
   if (t.category === NONE) return t.amount > 0 ? NONE : null
   if (t.category && exists(t.category)) return t.category
   const rule = plan.txRules?.links[`m:${merchantKey(t.label)}`]
   if (rule === NONE) return t.amount > 0 ? NONE : null
   if (rule && exists(rule)) return rule
+  if (transfers?.has(t.id) || looksLikeTransfer(t)) return TRANSFER
   // Placement reconnu : sauf si une de vos lignes porte ce nom (ex. dépense fixe « DCA Binance »)
   if (looksLikeInvestment(t, plan)) return lineFor(t, categoryOf(t, plan), monthLines, plan, true)?.id ?? INVEST
   return lineFor(t, categoryOf(t, plan), monthLines, plan)?.id ?? null
@@ -175,11 +202,15 @@ export interface MonthAnalysis {
   /** Placé ce mois (net : versements − retraits), hors dépenses et rentrées */
   invested: Cents
   investTxs: Transaction[]
+  /** Virements entre vos comptes (ignorés dans les totaux) */
+  transfers: Transaction[]
 }
 
 /** Analyse des opérations d'un mois, ligne par ligne de « Mes données ». */
-export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): MonthAnalysis {
-  const txs = all.filter((t) => monthOfTx(t) === month)
+export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey, account?: string | null): MonthAnalysis {
+  // Les virements se cherchent sur tous les comptes, avant de filtrer sur le compte choisi
+  const pairs = findTransfers(all)
+  const txs = all.filter((t) => monthOfTx(t) === month && (!account || t.account === account))
   const monthLines = planLinesOf(plan, month)
   const planned = new Map(monthLines.map((l) => [l.id, l]))
   const kinds = new Map<string, string>([
@@ -203,8 +234,13 @@ export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): M
   let received = 0
   let invested = 0
   const investTxs: Transaction[] = []
+  const transfers: Transaction[] = []
   for (const t of txs) {
-    const id = assignedLine(t, plan, monthLines)
+    const id = assignedLine(t, plan, monthLines, pairs)
+    if (id === TRANSFER) {
+      transfers.push(t)
+      continue
+    }
     if (id === INVEST) {
       invested -= t.amount
       investTxs.push(t)
@@ -235,6 +271,7 @@ export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): M
     otherIn,
     invested,
     investTxs: investTxs.sort((x, y) => x.amount - y.amount),
+    transfers,
   }
 }
 
