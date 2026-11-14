@@ -172,6 +172,8 @@ export interface MonthRow {
   opening: Cents
   /** Solde de début prévu par le calcul, quand il a été remplacé par un solde saisi */
   plannedOpening?: Cents
+  /** Mois en cours : solde de début reconstitué (le vrai solde du 1er n'a pas été saisi) */
+  openingEstimated?: boolean
   incomes: Cents
   outflows: Cents // positif
   /** Reste du mois = entrées - sorties (peut être négatif) */

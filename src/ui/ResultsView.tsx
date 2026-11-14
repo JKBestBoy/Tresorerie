@@ -330,7 +330,24 @@ function Stat({ icon, label, value, tone }: { icon: React.ReactNode; label: stri
  * le montant se touche pour saisir le montant réel de ce mois-là.
  */
 /** Ligne « Écart non prévu » du mois en cours : solde saisi − (début de mois + ce qui est passé). */
-function GapLine({ amount }: { amount: Cents }) {
+function GapLine({ amount, estimated, month }: { amount: Cents; estimated?: boolean; month: string }) {
+  const first = `1er ${monthLabel(month).split(' ')[0]}`
+  if (estimated || amount === 0) {
+    return (
+      <div className="flex items-center gap-3 py-1.5">
+        <span className="grid h-[19px] w-[19px] shrink-0 place-items-center rounded-full bg-surface text-[11px] font-bold text-muted ring-1 ring-line">±</span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium">Écart non prévu</span>
+          <span className="block text-[11px] leading-tight text-muted">
+            {estimated
+              ? `Pour le voir, indiquez votre solde du ${first} : touchez ✎ « Solde début de mois » en haut de ce mois.`
+              : 'Aucun écart : tout s’est passé comme prévu.'}
+          </span>
+        </span>
+        <span className="num shrink-0 font-semibold text-muted">{estimated ? '—' : formatEuros(0)}</span>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center gap-3 py-1.5">
       <span className={`grid h-[19px] w-[19px] shrink-0 place-items-center rounded-full text-[11px] font-bold ${amount < 0 ? 'bg-neg/15 text-neg' : 'bg-pos/15 text-pos'}`}>
@@ -361,7 +378,7 @@ function BalanceLine({ amount, date }: { amount: Cents; date: string }) {
   )
 }
 
-type DetailItem = { kind: 'flow'; d: MonthRow['details'][number] } | { kind: 'gap'; amount: Cents } | { kind: 'balance' }
+type DetailItem = { kind: 'flow'; d: MonthRow['details'][number] } | { kind: 'gap'; amount: Cents; estimated?: boolean } | { kind: 'balance' }
 
 /** Ordre d'affichage : mois en cours = passé, écart, solde saisi, puis à venir ; autres mois = tel quel. */
 function detailItems(r: MonthRow, isStart: boolean): DetailItem[] {
@@ -370,7 +387,8 @@ function detailItems(r: MonthRow, isStart: boolean): DetailItem[] {
   const flows = r.details.filter((d) => d.kind !== 'gap')
   return [
     ...flows.filter((d) => d.settled).map((d) => ({ kind: 'flow' as const, d })),
-    ...(gap ? [{ kind: 'gap' as const, amount: gap.amount }] : []),
+    // Toujours affichée pour le mois en cours (même à 0, ou à compléter si le solde du 1er est inconnu)
+    { kind: 'gap' as const, amount: gap?.amount ?? 0, estimated: r.openingEstimated },
     { kind: 'balance' as const },
     ...flows.filter((d) => !d.settled).map((d) => ({ kind: 'flow' as const, d })),
   ]
@@ -521,7 +539,10 @@ function OpeningLine({ row: r, isStart, onOpening }: { row: MonthRow; isStart: b
       title="Modifier le solde de début de mois"
       className="-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-muted transition hover:bg-surface"
     >
-      <span>Solde début de mois</span>
+      <span>
+        Solde début de mois
+        {isStart && r.openingEstimated && <span className="block text-[11px] leading-tight text-warn">Estimé · touchez pour indiquer le vrai</span>}
+      </span>
       <span className="num flex flex-col items-end">
         <span className="flex items-center gap-1">
           <span className={`font-semibold ${changed ? 'text-ink underline decoration-dotted underline-offset-4' : ''} ${r.opening < 0 ? 'text-neg' : ''}`}>
@@ -608,7 +629,7 @@ function MonthCard({
               {it.kind === 'flow' ? (
                 <DetailLine d={it.d} onToggle={onToggle} onAmount={onAmount} />
               ) : it.kind === 'gap' ? (
-                <GapLine amount={it.amount} />
+                <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
               ) : (
                 <BalanceLine amount={balance.amount} date={balance.date} />
               )}
@@ -709,7 +730,7 @@ function MonthTable({
                             {it.kind === 'flow' ? (
                               <DetailLine d={it.d} onToggle={(id) => onToggle(r.month, id)} onAmount={(id, a) => onAmount(r.month, id, a)} />
                             ) : it.kind === 'gap' ? (
-                              <GapLine amount={it.amount} />
+                              <GapLine amount={it.amount} estimated={it.estimated} month={r.month} />
                             ) : (
                               <BalanceLine amount={balance.amount} date={balance.date} />
                             )}

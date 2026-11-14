@@ -295,6 +295,7 @@ export function project(
     rows.push({
       month: m,
       opening,
+      ...(i === 0 && plan.monthStart?.month !== m ? { openingEstimated: true } : {}),
       ...(typed !== undefined && typed !== row0Balance(rows) ? { plannedOpening: row0Balance(rows) } : {}),
       incomes,
       outflows,
