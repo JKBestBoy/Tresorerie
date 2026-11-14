@@ -114,13 +114,19 @@ export interface Plan {
    * est `startingCapital`). La projection repart de ce montant à partir de ce mois.
    */
   openings?: Record<MonthKey, Cents>
+  /**
+   * Solde au début du mois de départ, quand il est connu (fixé à la première mise à jour du solde
+   * en cours de mois, ou saisi à la main). Sinon, il est reconstitué : solde saisi − ce qui est déjà passé.
+   */
+  monthStart?: { month: MonthKey; amount: Cents }
   /** Mois écoulés archivés à chaque mise à jour du solde (du plus ancien au plus récent) */
   history?: HistoryMonth[]
   /** Ancien réglage (part des investissements comptée dans la sécurité) : n'est plus utilisé. */
   investmentsCountedPct?: number
 }
 
-export type FlowKind = 'income' | 'oneOffIncome' | 'fixedExpense' | 'plannedExpense'
+/** 'gap' : écart non prévu du mois en cours (solde réel saisi − ce qui était prévu) */
+export type FlowKind = 'income' | 'oneOffIncome' | 'fixedExpense' | 'plannedExpense' | 'gap'
 
 /** Une ligne d'un mois archivé */
 export interface HistoryLine {

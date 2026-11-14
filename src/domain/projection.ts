@@ -95,6 +95,13 @@ export function withNewBalance(plan: Plan, amount: number, date: string): Plan {
   const history = [...(plan.history ?? []).filter((h) => !archived.some((a) => a.month === h.month)), ...archived].sort((a, b) =>
     a.month.localeCompare(b.month),
   )
+  // Mise à jour en cours de mois : le solde du début du mois ne change pas (on le fige s'il n'était que reconstitué)
+  const sameMonth = month === startMonthOf(plan)
+  const monthStart = sameMonth
+    ? plan.monthStart?.month === month
+      ? plan.monthStart
+      : { month, amount: project(plan, [], month)[0].opening }
+    : undefined
   const keep = <T,>(rec: Record<string, T> | undefined, keyMonth: (k: string) => string) =>
     rec ? Object.fromEntries(Object.entries(rec).filter(([k]) => keyMonth(k) >= month)) : undefined
   return {
@@ -105,6 +112,7 @@ export function withNewBalance(plan: Plan, amount: number, date: string): Plan {
     // Les montants réels et soldes saisis des mois écoulés sont désormais dans l'historique
     actuals: keep(plan.actuals, (k) => k.slice(0, 7)),
     openings: keep(plan.openings, (k) => k),
+    monthStart,
     history,
   }
 }
@@ -129,7 +137,8 @@ function row0Balance(rows: MonthRow[]): Cents {
  */
 export function setOpening(plan: Plan, month: MonthKey, amount: Cents | null): Plan {
   if (month === startMonthOf(plan)) {
-    return amount === null ? plan : { ...plan, startingCapital: { ...plan.startingCapital, amount } }
+    // Mois en cours : c'est le solde au 1er du mois, distinct du solde actuel saisi
+    return amount === null ? { ...plan, monthStart: undefined } : { ...plan, monthStart: { month, amount: Math.round(amount) } }
   }
   const openings = { ...(plan.openings ?? {}) }
   if (amount === null) delete openings[month]
@@ -256,16 +265,32 @@ export function project(
   let balance = plan.startingCapital.amount
   for (let i = 0; i < count; i++) {
     const m = addMonths(start, i)
-    const details = lines.get(m) ?? []
+    let details = lines.get(m) ?? []
     let incomes = 0
     let outflows = 0
-    for (const l of details) {
-      if (l.settled) continue
-      if (l.amount >= 0) incomes += l.amount
-      else outflows += -l.amount
+    let opening: Cents
+    let typed: Cents | undefined
+    if (i === 0) {
+      // Mois en cours : on montre le mois entier. Début de mois (connu ou reconstitué)
+      // + tout ce qui est passé + écart non prévu = solde saisi ; puis ce qui reste à venir.
+      const passed = details.filter((l) => l.settled).reduce((s, l) => s + l.amount, 0)
+      const known = plan.monthStart?.month === m ? plan.monthStart.amount : undefined
+      opening = known ?? plan.startingCapital.amount - passed
+      const gap = plan.startingCapital.amount - opening - passed
+      if (gap !== 0) details = [...details, { sourceId: '__gap__', kind: 'gap', label: 'Écart non prévu', amount: gap, settled: true }]
+      for (const l of details) {
+        if (l.amount >= 0) incomes += l.amount
+        else outflows += -l.amount
+      }
+    } else {
+      for (const l of details) {
+        if (l.settled) continue
+        if (l.amount >= 0) incomes += l.amount
+        else outflows += -l.amount
+      }
+      typed = plan.openings?.[m]
+      opening = typed ?? balance
     }
-    const typed = i > 0 ? plan.openings?.[m] : undefined
-    const opening = typed ?? balance
     balance = opening + incomes - outflows
     rows.push({
       month: m,

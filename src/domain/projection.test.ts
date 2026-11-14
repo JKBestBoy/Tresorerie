@@ -129,8 +129,9 @@ describe('projection', () => {
       [],
       NOW,
     )
-    // Salaire déjà reçu, loyer pas encore prélevé
-    expect(rows[0]).toMatchObject({ incomes: 0, outflows: 80000, closing: 20000 })
+    // Salaire déjà reçu (compris dans les 1 000 €), loyer pas encore prélevé.
+    // Le mois en cours montre tout le mois ; le début de mois est reconstitué (1 000 − 1 200 = −200 €).
+    expect(rows[0]).toMatchObject({ opening: -20000, incomes: 120000, outflows: 80000, closing: 20000 })
     expect(rows[0].details.find((d) => d.sourceId === 'a')?.settled).toBe(true)
     expect(rows[1]).toMatchObject({ incomes: 120000, outflows: 80000 })
   })
@@ -144,12 +145,12 @@ describe('projection', () => {
       ],
     })
     // Anciennes cases : le loyer de novembre est pointé
-    expect(project(p, [], NOW)[0]).toMatchObject({ incomes: 120000, outflows: 3000 })
+    expect(project(p, [], NOW)[0]).toMatchObject({ opening: 180000, incomes: 120000, outflows: 83000, closing: 217000 })
     // On coche Internet de novembre et le loyer de décembre (payé en avance)
     const p2 = toggleSettled(toggleSettled(p, '2026-11', 'i'), '2026-12', 'f')
     expect([...paidKeys(p2)]).toEqual(['2026-11|f', '2026-11|i', '2026-12|f'])
     const rows = project(p2, [], NOW)
-    expect(rows[0].outflows).toBe(0)
+    expect(rows[0].closing).toBe(220000) // plus rien à payer en novembre
     expect(rows[1].outflows).toBe(3000)
     expect(rows[2].outflows).toBe(83000)
     // Décocher
@@ -176,8 +177,12 @@ describe('projection', () => {
     expect(rows[1].plannedOpening).toBeUndefined()
     // Revenir au calcul
     expect(project(setOpening(p2, '2027-01', null), [], NOW)[2].opening).toBe(80000)
-    // Mois de départ = solde de départ
-    expect(setOpening(p, '2026-11', 50000).startingCapital.amount).toBe(50000)
+    // Mois en cours : c'est le solde au 1er du mois, pas le solde actuel ; la différence est un écart
+    const p3 = setOpening(p, '2026-11', 120000)
+    expect(p3.startingCapital.amount).toBe(100000)
+    const r3 = project(p3, [], NOW)[0]
+    expect(r3).toMatchObject({ opening: 120000, closing: 90000 })
+    expect(r3.details.find((d) => d.kind === 'gap')).toMatchObject({ amount: -20000 })
   })
 
   it('nouveau solde : ce qui était coché à l’avance reste coché, les mois passés disparaissent', () => {
@@ -193,8 +198,30 @@ describe('projection', () => {
     expect([...paidKeys(next)]).toEqual(['2026-12|l'])
     const rows = project(next, [], '2026-12')
     // Le loyer de décembre est déjà dans le nouveau solde : seul Internet reste à payer
-    expect(rows[0]).toMatchObject({ month: '2026-12', opening: 50000, outflows: 3000 })
+    expect(rows[0]).toMatchObject({ month: '2026-12', opening: 130000, outflows: 83000, closing: 47000 })
     expect(rows[1].outflows).toBe(83000)
+  })
+
+  it('mise à jour du solde en cours de mois : le début de mois ne bouge pas, l’écart apparaît', () => {
+    const p = plan({
+      incomePeriods: [{ id: 's', label: 'Salaire', monthlyAmount: 150000, startMonth: null, endMonth: null }],
+      fixedExpenses: [
+        { id: 'l', label: 'Loyer', monthlyAmount: 80000, startMonth: null, endMonth: null },
+        { id: 'c', label: 'Courses', monthlyAmount: 30000, startMonth: null, endMonth: null },
+      ],
+    })
+    // 1er novembre : 1 000 € ; salaire et loyer passés → solde prévu 1 700 €
+    const ticked = toggleSettled(toggleSettled(setOpening(p, '2026-11', 100000), '2026-11', 's'), '2026-11', 'l')
+    // Le 14 : en réalité 1 450 € (250 € de dépenses en plus)
+    const next = withNewBalance({ ...ticked, startingCapital: { amount: 170000, date: '2026-11-01' } }, 145000, '2026-11-14')
+    const r = project(next, [], NOW)[0]
+    expect(next.monthStart).toEqual({ month: '2026-11', amount: 100000 })
+    expect(r.opening).toBe(100000)
+    expect(r.details.find((d) => d.kind === 'gap')).toMatchObject({ label: 'Écart non prévu', amount: -25000 })
+    expect(r.closing).toBe(145000 - 30000) // il reste les courses à payer
+    // Sans début de mois connu, il est figé à la première mise à jour
+    const legacy = toggleSettled(p, '2026-11', 'l') // solde 1 000 € avec loyer passé → début reconstitué 1 800 €
+    expect(withNewBalance(legacy, 90000, '2026-11-14').monthStart).toEqual({ month: '2026-11', amount: 180000 })
   })
 
   it('étale une grosse dépense en mensualités et pose les marqueurs', () => {

@@ -28,7 +28,7 @@ describe('historique', () => {
     const next = withNewBalance(p, 240000, '2026-12-02')
     expect(next.history).toHaveLength(1)
     const h = next.history![0]
-    expect(h).toMatchObject({ month: '2026-11', opening: 100000, closing: expected, realBalance: { amount: 240000, date: '2026-12-02' } })
+    expect(h).toMatchObject({ month: '2026-11', opening: 180000, closing: expected, realBalance: { amount: 240000, date: '2026-12-02' } })
     expect(h.lines.find((l) => l.id === 'c')).toMatchObject({ planned: -10000, amount: -8700, paid: false })
     expect(h.lines.find((l) => l.id === 'l')).toMatchObject({ amount: -80000, paid: true })
     // Les corrections du mois archivé sont nettoyées, celles à venir sont gardées

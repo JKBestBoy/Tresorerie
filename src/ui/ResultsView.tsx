@@ -205,11 +205,12 @@ export function ResultsView({
               onToggle={(id) => toggle(r.month, id)}
               onAmount={(id, a) => setAmount(r.month, id, a)}
               onOpening={(a) => setOpeningOf(r.month, a)}
+              balance={plan.startingCapital}
             />
           ))}
         </div>
         {/* Grand écran : tableau compact */}
-        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} openAtStart={start} onToggle={toggle} onAmount={setAmount} onOpening={setOpeningOf} />
+        <MonthTable rows={rows} cushion={plan.safetyCushion} current={current} openAtStart={start} onToggle={toggle} onAmount={setAmount} onOpening={setOpeningOf} balance={plan.startingCapital} />
       </section>
 
       <BalanceChart rows={rows} cushion={plan.safetyCushion} />
@@ -328,6 +329,53 @@ function Stat({ icon, label, value, tone }: { icon: React.ReactNode; label: stri
  * Une ligne du détail d'un mois : le rond coche/décoche (déjà passé sur le compte),
  * le montant se touche pour saisir le montant réel de ce mois-là.
  */
+/** Ligne « Écart non prévu » du mois en cours : solde saisi − (début de mois + ce qui est passé). */
+function GapLine({ amount }: { amount: Cents }) {
+  return (
+    <div className="flex items-center gap-3 py-1.5">
+      <span className={`grid h-[19px] w-[19px] shrink-0 place-items-center rounded-full text-[11px] font-bold ${amount < 0 ? 'bg-neg/15 text-neg' : 'bg-pos/15 text-pos'}`}>
+        ±
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium">Écart non prévu</span>
+        <span className="block text-[11px] leading-tight text-muted">
+          {amount < 0 ? 'Dépensé en plus de ce qui était prévu' : 'Rentré en plus de ce qui était prévu'}
+        </span>
+      </span>
+      <span className={`num shrink-0 font-semibold ${amount < 0 ? 'text-neg' : 'text-pos'}`}>{signedExact(amount)}</span>
+    </div>
+  )
+}
+
+/** Repère « Mon solde au JJ mois » (le dernier solde saisi), entre ce qui est passé et ce qui reste à venir. */
+function BalanceLine({ amount, date }: { amount: Cents; date: string }) {
+  const d = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(date + 'T12:00:00'))
+  return (
+    <div className="-mx-2 my-1 flex items-center justify-between gap-3 rounded-lg bg-accent-soft px-2 py-2 text-accent-ink">
+      <span className="min-w-0">
+        <span className="block font-semibold">Mon solde au {d}</span>
+        <span className="block text-[11px] leading-tight opacity-80">Saisi par vous · modifiable dans la carte violette</span>
+      </span>
+      <span className="num shrink-0 font-bold">{formatEuros(amount)}</span>
+    </div>
+  )
+}
+
+type DetailItem = { kind: 'flow'; d: MonthRow['details'][number] } | { kind: 'gap'; amount: Cents } | { kind: 'balance' }
+
+/** Ordre d'affichage : mois en cours = passé, écart, solde saisi, puis à venir ; autres mois = tel quel. */
+function detailItems(r: MonthRow, isStart: boolean): DetailItem[] {
+  if (!isStart) return r.details.map((d) => ({ kind: 'flow', d }))
+  const gap = r.details.find((d) => d.kind === 'gap')
+  const flows = r.details.filter((d) => d.kind !== 'gap')
+  return [
+    ...flows.filter((d) => d.settled).map((d) => ({ kind: 'flow' as const, d })),
+    ...(gap ? [{ kind: 'gap' as const, amount: gap.amount }] : []),
+    { kind: 'balance' as const },
+    ...flows.filter((d) => !d.settled).map((d) => ({ kind: 'flow' as const, d })),
+  ]
+}
+
 function DetailLine({
   d,
   onToggle,
@@ -432,7 +480,7 @@ function OpeningLine({ row: r, isStart, onOpening }: { row: MonthRow; isStart: b
     return (
       <div className="my-1.5 space-y-2 rounded-xl bg-surface p-2.5 ring-1 ring-accent/30">
         <p className="text-xs font-semibold text-muted">
-          {isStart ? 'Solde de vos comptes (solde de départ)' : 'Solde réel de vos comptes au début du mois'}
+          {isStart ? 'Solde de vos comptes au 1er du mois (pas le solde d’aujourd’hui)' : 'Solde réel de vos comptes au début du mois'}
           {changed && <> (calculé : {formatEuros(r.plannedOpening!)})</>}
         </p>
         <div
@@ -488,7 +536,8 @@ function OpeningLine({ row: r, isStart, onOpening }: { row: MonthRow; isStart: b
 }
 
 function settledCount(r: MonthRow) {
-  return `${r.details.filter((d) => d.settled).length}/${r.details.length} ✓`
+  const flows = r.details.filter((d) => d.kind !== 'gap')
+  return `${flows.filter((d) => d.settled).length}/${flows.length} ✓`
 }
 
 function MonthCard({
@@ -499,6 +548,7 @@ function MonthCard({
   onToggle,
   onAmount,
   onOpening,
+  balance,
 }: {
   row: MonthRow
   cushion: Cents
@@ -507,6 +557,7 @@ function MonthCard({
   onToggle: (id: string) => void
   onAmount: (id: string, amount: Cents | null) => void
   onOpening: (amount: Cents | null) => void
+  balance: { amount: Cents; date: string }
 }) {
   const [initiallyOpen] = useState(openAtStart)
   const overdrawn = r.closing < 0
@@ -523,7 +574,7 @@ function MonthCard({
           <div className="flex min-w-0 items-center gap-2">
             <p className="font-bold">{cap(monthLabel(r.month))}</p>
             {isCurrent && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-ink">Ce mois-ci</span>}
-            {r.details.some((d) => d.settled) && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
+            {r.details.some((d) => d.settled && d.kind !== 'gap') && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
             {overdrawn && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Découvert</span>}
             {below && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Sous le matelas</span>}
           </div>
@@ -552,9 +603,15 @@ function MonthCard({
           <li>
             <OpeningLine row={r} isStart={openAtStart} onOpening={onOpening} />
           </li>
-          {r.details.map((d, i) => (
+          {detailItems(r, openAtStart).map((it, i) => (
             <li key={i} className="py-0.5">
-              <DetailLine d={d} onToggle={onToggle} onAmount={onAmount} />
+              {it.kind === 'flow' ? (
+                <DetailLine d={it.d} onToggle={onToggle} onAmount={onAmount} />
+              ) : it.kind === 'gap' ? (
+                <GapLine amount={it.amount} />
+              ) : (
+                <BalanceLine amount={balance.amount} date={balance.date} />
+              )}
             </li>
           ))}
         </ul>
@@ -571,6 +628,7 @@ function MonthTable({
   onToggle,
   onAmount,
   onOpening,
+  balance,
 }: {
   rows: MonthRow[]
   cushion: Cents
@@ -579,6 +637,7 @@ function MonthTable({
   onToggle: (month: string, id: string) => void
   onAmount: (month: string, id: string, amount: Cents | null) => void
   onOpening: (month: string, amount: Cents | null) => void
+  balance: { amount: Cents; date: string }
 }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set([openAtStart]))
   const toggle = (m: string) =>
@@ -618,7 +677,7 @@ function MonthTable({
                   <td className="py-2.5 pl-5 pr-2">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-semibold">{cap(monthLabel(r.month))}</span>
-                      {r.details.some((d) => d.settled) && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
+                      {r.details.some((d) => d.settled && d.kind !== 'gap') && <span className="num text-[11px] font-semibold text-muted">{settledCount(r)}</span>}
                       {overdrawn && <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[11px] font-semibold text-neg">Découvert</span>}
                       {below && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Sous le matelas</span>}
                       {r.plannedMarkers.map((m, i) => (
@@ -645,9 +704,15 @@ function MonthTable({
                         <li className="-my-0.5">
                           <OpeningLine row={r} isStart={r.month === openAtStart} onOpening={(a) => onOpening(r.month, a)} />
                         </li>
-                        {r.details.map((d, i) => (
+                        {detailItems(r, r.month === openAtStart).map((it, i) => (
                           <li key={i}>
-                            <DetailLine d={d} onToggle={(id) => onToggle(r.month, id)} onAmount={(id, a) => onAmount(r.month, id, a)} />
+                            {it.kind === 'flow' ? (
+                              <DetailLine d={it.d} onToggle={(id) => onToggle(r.month, id)} onAmount={(id, a) => onAmount(r.month, id, a)} />
+                            ) : it.kind === 'gap' ? (
+                              <GapLine amount={it.amount} />
+                            ) : (
+                              <BalanceLine amount={balance.amount} date={balance.date} />
+                            )}
                           </li>
                         ))}
                       </ul>
