@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircle2, ChevronDown, FileUp, Link2, Receipt, Sparkles, Tag } from 'lucide-react'
-import { CATEGORIES, categoryById, merchantKey } from '../domain/categories'
-import { analyzeMonth, categoryOf, planLinesOf, withCategoryRule, withLinkRule, type MonthAnalysis } from '../domain/matching'
+import { CheckCircle2, ChevronDown, FileUp, ListChecks, Receipt, Sparkles, Tag } from 'lucide-react'
+import { merchantKey } from '../domain/categories'
+import { NONE, analyzeMonth, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
 import { setActual, startMonthOf, toggleSettled, paidKeys, paidKey } from '../domain/projection'
@@ -256,84 +256,125 @@ function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (tx
 }
 
 /** Fiche d'une opération : catégorie (mémorisable) et rattachement à une ligne du plan. */
+/** Fiche d'une opération : sur quelle ligne de « Mes données » elle tombe. */
 function TxSheet({
   t,
   plan,
+  assigned,
   setPlan,
   setCategory,
   onClose,
+  queueLeft,
+  onNext,
 }: {
   t: Transaction
   plan: Plan
+  /** Ligne actuelle (null = non prévue) */
+  assigned: string | null
   setPlan: (u: (p: Plan) => Plan) => void
   setCategory: (id: string, c: string | null) => Promise<void>
   onClose: () => void
+  queueLeft?: number
+  onNext?: () => void
 }) {
-  const current = categoryOf(t, plan)
-  const [remember, setRemember] = useState(true)
-  const lines = planLinesOf(plan, t.date.slice(0, 7)).filter((l) => Math.sign(l.planned) === Math.sign(t.amount))
-  const mKey = `m:${merchantKey(t.label)}`
-  const linked = plan.txRules?.links[mKey]
+  const merchant = merchantKey(t.label) || t.label
+  const [forMerchant, setForMerchant] = useState(false)
+  const options = lineOptions(plan, t.amount)
+
+  async function choose(id: string) {
+    if (forMerchant) {
+      setPlan((p) => withLinkRule(p, `m:${merchantKey(t.label)}`, id))
+      await setCategory(t.id, null)
+    } else await setCategory(t.id, id)
+    if (onNext) onNext()
+  }
+
   return (
     <Sheet title={t.label} onClose={onClose}>
       <p className="mt-1 text-sm text-muted">
         {day(t.date)} · <span className={`num font-semibold ${t.amount < 0 ? 'text-neg' : 'text-pos'}`}>{exact(t.amount)}</span>
         {t.description && t.description !== t.label && <span className="block truncate text-xs">{t.description}</span>}
       </p>
+      {queueLeft !== undefined && (
+        <p className="mt-2 rounded-xl bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent-ink">À classer : encore {queueLeft} après celle-ci</p>
+      )}
+
       <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-muted">
-        <Tag size={14} /> Catégorie
+        <Tag size={14} /> {t.amount < 0 ? 'Quelle dépense de « Mes données » ?' : 'Quel revenu de « Mes données » ?'}
       </p>
+      <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1 text-xs font-semibold">
+        <button
+          type="button"
+          onClick={() => setForMerchant(false)}
+          className={`rounded-lg px-2 py-1.5 ${!forMerchant ? 'bg-surface text-accent shadow-sm' : 'text-muted'}`}
+        >
+          Cette opération seulement
+        </button>
+        <button
+          type="button"
+          onClick={() => setForMerchant(true)}
+          className={`truncate rounded-lg px-2 py-1.5 ${forMerchant ? 'bg-surface text-accent shadow-sm' : 'text-muted'}`}
+        >
+          Toujours pour « {merchant} »
+        </button>
+      </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {CATEGORIES.map((c) => (
+        {options.map((o) => (
           <button
-            key={c.id}
+            key={o.id}
             type="button"
-            onClick={async () => {
-              if (remember) setPlan((p) => withCategoryRule(p, t.label, c.id))
-              await setCategory(t.id, remember ? null : c.id)
-            }}
+            onClick={() => choose(o.id)}
             className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${
-              c.id === current ? 'bg-accent text-white ring-accent dark:text-bg' : 'bg-surface-2 text-ink ring-line hover:bg-accent-soft'
+              o.id === assigned ? 'bg-accent text-white ring-accent dark:text-bg' : 'bg-surface-2 text-ink ring-line hover:bg-accent-soft'
             }`}
           >
-            {c.label}
+            {o.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => choose(NONE)}
+          className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${
+            assigned === null && (t.category === NONE || plan.txRules?.links[`m:${merchantKey(t.label)}`] === NONE)
+              ? 'bg-neg text-white ring-neg'
+              : 'bg-surface-2 text-neg ring-line hover:bg-neg-soft'
+          }`}
+        >
+          Non prévu
+        </button>
       </div>
-      <label className="mt-2 flex items-center gap-2 text-xs text-muted">
-        <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-        Toujours pour « {merchantKey(t.label) || t.label} »
-      </label>
-      <p className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-muted">
-        <Link2 size={14} /> Correspond à une ligne prévue ?
-      </p>
-      <select
-        className={`${inputClass} mt-2 text-sm`}
-        value={linked ?? ''}
-        onChange={(e) => setPlan((p) => withLinkRule(p, mKey, e.target.value || null))}
-      >
-        <option value="">Non : dépense non prévue</option>
-        {lines.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.label} (prévu {exact(Math.abs(l.planned))})
-          </option>
-        ))}
-      </select>
-      <p className="mt-1 text-xs text-muted">Retenu pour toutes les opérations de ce commerçant.</p>
-      <button type="button" onClick={onClose} className="mt-5 w-full rounded-full bg-accent py-2.5 text-sm font-bold text-white dark:text-bg">
-        OK
-      </button>
+      {options.length === 0 && (
+        <p className="mt-2 text-xs text-muted">Aucune ligne dans « Mes données » pour l’instant : ajoutez vos dépenses fixes (loyer, courses…) pour pouvoir classer.</p>
+      )}
+      <p className="mt-2 text-xs text-muted">Pour une nouvelle catégorie, ajoutez une ligne dans « Mes données » (ex. une dépense fixe « Sorties »).</p>
+      <div className="mt-5 flex gap-2">
+        {onNext && (
+          <button type="button" onClick={onNext} className="flex-1 rounded-full py-2.5 text-sm font-semibold text-muted hover:bg-surface-2">
+            Passer
+          </button>
+        )}
+        <button type="button" onClick={onClose} className="flex-1 rounded-full bg-accent py-2.5 text-sm font-bold text-white dark:text-bg">
+          {onNext ? 'Terminer' : 'OK'}
+        </button>
+      </div>
     </Sheet>
   )
 }
 
-function TxRow({ t, onOpen }: { t: Transaction; onOpen: () => void }) {
+function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onOpen: () => void }) {
   return (
     <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 py-2.5 text-left text-sm hover:bg-surface-2">
       <span className="min-w-0 flex-1">
         <span className="block truncate font-semibold">{t.label}</span>
-        <span className="block truncate text-xs text-muted">
-          {day(t.date)} · {categoryById(t.category).label}
+        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
+          {day(t.date)}
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              label ? 'bg-surface-2 text-ink ring-1 ring-line' : 'bg-warn-soft text-warn'
+            }`}
+          >
+            <Tag size={10} /> {label ?? 'Non classé'}
+          </span>
         </span>
       </span>
       <span className={`num shrink-0 font-bold ${t.amount < 0 ? 'text-neg' : 'text-pos'}`}>{exact(t.amount)}</span>
@@ -341,20 +382,24 @@ function TxRow({ t, onOpen }: { t: Transaction; onOpen: () => void }) {
   )
 }
 
-function Bar({ value, max }: { value: number; max: number }) {
+function Bar({ value, planned }: { value: number; planned: number }) {
+  // Barre du réel ; trait = montant prévu ; rouge si dépassé
+  const max = Math.max(value, planned, 1)
+  const over = planned > 0 && value > planned
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-surface-2">
-      <div className="h-full rounded-full bg-accent" style={{ width: `${max > 0 ? Math.max(2, (value / max) * 100) : 0}%` }} />
+    <div className="relative h-2 overflow-hidden rounded-full bg-surface-2">
+      <div className={`h-full rounded-full ${over ? 'bg-neg' : 'bg-accent'}`} style={{ width: `${Math.max(value > 0 ? 2 : 0, (value / max) * 100)}%` }} />
+      {planned > 0 && <div className="absolute inset-y-0 w-0.5 bg-ink/50" style={{ left: `calc(${(planned / max) * 100}% - 1px)` }} />}
     </div>
   )
 }
 
 function applyToPlan(plan: Plan, a: MonthAnalysis): Plan {
-  // Reporte les vrais montants et coche les lignes rapprochées (déjà passées sur le compte)
+  // Reporte les vrais montants et coche les lignes retrouvées (déjà passées sur le compte)
   let p = plan
   const keys = paidKeys(p)
   for (const l of a.lines) {
-    if (l.txs.length === 0) continue
+    if (l.txs.length === 0 || l.planned === 0) continue
     p = setActual(p, a.month, l.id, Math.abs(l.real))
     if (!keys.has(paidKey(a.month, l.id))) p = toggleSettled(p, a.month, l.id)
   }
@@ -372,29 +417,50 @@ export function SpendingView({
 }) {
   const [importing, setImporting] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
-  const open = tx.transactions.find((t) => t.id === openId) ?? null
+  const [queue, setQueue] = useState<string[] | null>(null)
   const [applied, setApplied] = useState<string | null>(null)
-  const months = useMemo(() => {
-    const set = new Set(tx.transactions.map((t) => t.date.slice(0, 7)))
-    return [...set].sort().reverse()
-  }, [tx.transactions])
+  const months = useMemo(() => [...new Set(tx.transactions.map((t) => t.date.slice(0, 7)))].sort().reverse(), [tx.transactions])
   const [chosen, setChosen] = useState<string | null>(null)
   const month = chosen && months.includes(chosen) ? chosen : (months[0] ?? monthOf(new Date()))
   const a = useMemo(() => analyzeMonth(plan, tx.transactions, month), [plan, tx.transactions, month])
+  // Ligne de chaque opération du mois (null = non prévue)
+  const lineOf = useMemo(() => {
+    const m = new Map<string, string | null>()
+    for (const l of a.lines) for (const t of l.txs) m.set(t.id, l.id)
+    for (const t of a.unplanned) m.set(t.id, null)
+    return m
+  }, [a])
+  const labelOf = (id: string | null | undefined) => (id ? (a.lines.find((l) => l.id === id)?.label ?? null) : null)
   const allOfMonth = useMemo(
-    () =>
-      tx.transactions
-        .filter((t) => t.date.startsWith(month))
-        .map((t) => ({ ...t, category: categoryOf(t, plan) }))
-        .sort((x, y) => y.date.localeCompare(x.date)),
-    [tx.transactions, month, plan],
+    () => tx.transactions.filter((t) => t.date.startsWith(month)).sort((x, y) => y.date.localeCompare(x.date)),
+    [tx.transactions, month],
   )
-  const canApply = month >= startMonthOf(plan) && a.lines.some((l) => l.txs.length > 0)
+  // À classer : dépenses non rattachées, sans choix « non prévu » explicite
+  const toSort = a.unplanned.filter((t) => t.category !== NONE && plan.txRules?.links[`m:${merchantKey(t.label)}`] !== NONE)
+  const expenseLines = a.lines.filter((l) => l.kind === 'fixedExpense' || l.kind === 'plannedExpense').filter((l) => l.planned < 0 || l.real < 0)
+  const canApply = month >= startMonthOf(plan) && a.lines.some((l) => l.txs.length > 0 && l.planned !== 0)
+  const currentId = queue ? queue[0] : openId
+  const open = tx.transactions.find((t) => t.id === currentId) ?? null
+  const next = () => setQueue((q) => (q && q.length > 1 ? q.slice(1) : null))
 
   const sheets = (
     <>
       {importing && <ImportSheet onClose={() => setImporting(false)} onImport={tx.add} />}
-      {open && <TxSheet t={open} plan={plan} setPlan={setPlan} setCategory={tx.setCategory} onClose={() => setOpenId(null)} />}
+      {open && (
+        <TxSheet
+          key={open.id}
+          t={open}
+          plan={plan}
+          assigned={lineOf.get(open.id) ?? null}
+          setPlan={setPlan}
+          setCategory={tx.setCategory}
+          onClose={() => {
+            setOpenId(null)
+            setQueue(null)
+          }}
+          {...(queue ? { queueLeft: queue.length - 1, onNext: next } : {})}
+        />
+      )}
     </>
   )
 
@@ -407,8 +473,8 @@ export function SpendingView({
           </div>
           <p className="font-semibold">Analysez vos vraies dépenses</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted">
-            Importez le relevé de votre banque (fichier CSV) : l’app classe chaque opération, la compare à ce que vous aviez prévu, et vous montre
-            où part l’argent non prévu.
+            Importez le relevé de votre banque (PDF ou CSV) : l’app range chaque opération dans vos lignes de « Mes données » (loyer, courses…),
+            compare au prévu, et vous montre où part l’argent non prévu.
           </p>
           <button
             type="button"
@@ -423,165 +489,172 @@ export function SpendingView({
     )
   }
 
-  const maxCat = Math.max(...a.byCategory.map((c) => c.total), 1)
-
   return (
     <>
-    <div className="space-y-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-6 lg:space-y-0">
-      <div className="space-y-4">
-        {/* Mois + import */}
-        <div className="flex items-center gap-2">
-          <select className={`${inputClass} flex-1 font-semibold`} value={month} onChange={(e) => setChosen(e.target.value)}>
-            {months.map((m) => (
-              <option key={m} value={m}>
-                {cap(monthLabel(m))}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setImporting(true)}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3.5 py-2.5 text-sm font-semibold text-white dark:text-bg"
-          >
-            <FileUp size={16} /> Importer
-          </button>
-        </div>
-
-        {/* Synthèse */}
-        <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-xs text-muted">Dépensé</p>
-              <p className="num text-2xl font-extrabold">{eur(a.spent)}</p>
-              <p className="text-xs text-muted">prévu {eur(a.plannedSpent)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Rentré</p>
-              <p className="num text-2xl font-extrabold text-pos">{eur(a.received)}</p>
-            </div>
+      <div className="space-y-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-6 lg:space-y-0">
+        <div className="space-y-4">
+          {/* Mois + import */}
+          <div className="flex items-center gap-2">
+            <select className={`${inputClass} flex-1 font-semibold`} value={month} onChange={(e) => setChosen(e.target.value)}>
+              {months.map((m) => (
+                <option key={m} value={m}>
+                  {cap(monthLabel(m))}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setImporting(true)}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3.5 py-2.5 text-sm font-semibold text-white dark:text-bg"
+            >
+              <FileUp size={16} /> Importer
+            </button>
           </div>
-          <div className="mt-4 rounded-2xl bg-neg-soft px-3.5 py-3 ring-1 ring-neg/15">
-            <p className="flex items-center gap-1 text-sm font-semibold text-neg">
-              Hors prévisions : <span className="num">{eur(a.unplannedTotal)}</span>
-              <Help title="Hors prévisions">
-                <p>Les dépenses de ce mois qui ne correspondent à aucune ligne prévue (dépenses fixes, grosses dépenses). C’est là que se cache l’écart entre ce que vous aviez prévu et votre vrai solde.</p>
-                <p>Touchez une opération pour changer sa catégorie, ou dire qu’elle correspond à une ligne prévue (ex : « ce virement, c’est mon loyer »). L’app s’en souviendra pour les prochains relevés.</p>
-              </Help>
-            </p>
-            <p className="text-xs text-muted">{a.unplanned.length} opération(s) non prévue(s) ce mois-ci</p>
-          </div>
-        </section>
 
-        {/* Par catégorie */}
-        <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
-          <h2 className="mb-3 font-bold">Par catégorie</h2>
-          <ul className="space-y-3">
-            {a.byCategory.map((c) => (
-              <li key={c.id}>
-                <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-                  <span className="font-semibold">
-                    {c.label} <span className="text-xs font-normal text-muted">· {c.count}</span>
-                  </span>
-                  <span className="num font-bold">{eur(c.total)}</span>
-                </div>
-                <Bar value={c.total} max={maxCat} />
-              </li>
-            ))}
-          </ul>
-        </section>
+          {/* Synthèse */}
+          <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-muted">Dépensé</p>
+                <p className="num text-2xl font-extrabold">{eur(a.spent)}</p>
+                <p className="text-xs text-muted">prévu {eur(a.plannedSpent)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted">Rentré</p>
+                <p className="num text-2xl font-extrabold text-pos">{eur(a.received)}</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl bg-neg-soft px-3.5 py-3 ring-1 ring-neg/15">
+              <p className="flex items-center gap-1 text-sm font-semibold text-neg">
+                Hors prévisions : <span className="num">{eur(a.unplannedTotal)}</span>
+                <Help title="Hors prévisions">
+                  <p>Les dépenses de ce mois qui ne tombent sur aucune de vos lignes de « Mes données ». C’est là que se cache l’écart entre ce que vous aviez prévu et votre vrai solde.</p>
+                  <p>Touchez une opération pour la ranger dans une de vos lignes (loyer, courses…), pour cette opération seulement ou pour ce commerçant à chaque fois.</p>
+                </Help>
+              </p>
+              <p className="text-xs text-muted">{a.unplanned.length} opération(s) non prévue(s) ce mois-ci</p>
+            </div>
+          </section>
 
-        {/* Lignes prévues */}
-        <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
-          <h2 className="mb-1 font-bold">Prévu ou réel</h2>
-          <p className="mb-2 text-xs text-muted">Vos lignes prévues ce mois-ci, et ce que le relevé montre vraiment.</p>
-          <ul className="divide-y divide-line">
-            {a.lines
-              .filter((l) => l.planned < 0 || l.txs.length)
-              .map((l) => {
-                const over = l.txs.length > 0 && Math.abs(l.real) > Math.abs(l.planned) + 50
+          {toSort.length > 0 && (
+            <section className="flex items-center gap-3 rounded-3xl bg-warn-soft p-4 ring-1 ring-warn/20">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-warn/15 text-warn">
+                <ListChecks size={20} />
+              </span>
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-bold">
+                  {toSort.length} opération{toSort.length > 1 ? 's' : ''} à classer
+                </p>
+                <p className="text-xs text-muted">Rangez-les dans vos lignes, une par une.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQueue(toSort.map((t) => t.id))}
+                className="shrink-0 rounded-full bg-warn px-4 py-2 text-sm font-bold text-white dark:text-bg"
+              >
+                Classer
+              </button>
+            </section>
+          )}
+
+          {/* Par catégorie = vos lignes de « Mes données » */}
+          <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
+            <h2 className="font-bold">Par catégorie</h2>
+            <p className="mb-3 text-xs text-muted">Vos lignes de « Mes données » : réel du mois (barre) et prévu (trait).</p>
+            <ul className="space-y-3">
+              {expenseLines.map((l) => {
+                const real = Math.abs(l.real)
+                const planned = Math.abs(l.planned)
+                const over = planned > 0 && real > planned + 50
                 return (
-                  <li key={l.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <span className="min-w-0">
-                      <span className="block truncate font-semibold">{l.label}</span>
-                      <span className="block text-xs text-muted">prévu {exact(Math.abs(l.planned))}</span>
-                    </span>
-                    <span className="shrink-0 text-right">
-                      {l.txs.length ? (
-                        <span className={`num block font-bold ${over ? 'text-neg' : 'text-pos'}`}>{exact(Math.abs(l.real))}</span>
-                      ) : (
-                        <span className="block text-xs text-muted">pas encore vu</span>
-                      )}
-                      {l.txs.length > 1 && <span className="block text-[11px] text-muted">{l.txs.length} opérations</span>}
-                    </span>
+                  <li key={l.id}>
+                    <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                      <span className="min-w-0 truncate font-semibold">
+                        {l.label} {l.txs.length > 0 && <span className="text-xs font-normal text-muted">· {l.txs.length}</span>}
+                      </span>
+                      <span className="num shrink-0">
+                        <span className={`font-bold ${over ? 'text-neg' : ''}`}>{l.txs.length ? eur(real) : '—'}</span>
+                        <span className="text-xs text-muted"> / {eur(planned)}</span>
+                      </span>
+                    </div>
+                    <Bar value={real} planned={planned} />
                   </li>
                 )
               })}
-          </ul>
-          {canApply && (
-            <div className="mt-3 rounded-2xl bg-accent-soft p-3 text-xs text-accent-ink">
-              {applied === month ? (
-                <p className="flex items-center gap-1.5 font-semibold">
-                  <CheckCircle2 size={14} /> Reporté dans « Mois par mois » : lignes cochées, vrais montants enregistrés.
-                </p>
-              ) : (
-                <>
-                  <p>
-                    Reporter dans « Mois par mois » : cocher les lignes retrouvées dans le relevé et enregistrer leurs vrais montants. À faire après
-                    avoir mis à jour votre solde (carte violette) avec celui de votre banque.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPlan((p) => applyToPlan(p, a))
-                      setApplied(month)
-                    }}
-                    className="mt-2 flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-2 font-semibold text-white dark:text-bg"
-                  >
-                    <Sparkles size={14} /> Reporter dans mon pointage
-                  </button>
-                </>
+              {a.unplannedTotal > 0 && (
+                <li>
+                  <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                    <span className="font-semibold text-neg">Non prévu · {a.unplanned.length}</span>
+                    <span className="num font-bold text-neg">{eur(a.unplannedTotal)}</span>
+                  </div>
+                  <Bar value={a.unplannedTotal} planned={0} />
+                </li>
               )}
-            </div>
-          )}
-        </section>
-      </div>
+            </ul>
+            {canApply && (
+              <div className="mt-4 rounded-2xl bg-accent-soft p-3 text-xs text-accent-ink">
+                {applied === month ? (
+                  <p className="flex items-center gap-1.5 font-semibold">
+                    <CheckCircle2 size={14} /> Reporté dans « Mois par mois » : lignes cochées, vrais montants enregistrés.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      Reporter dans « Mois par mois » : cocher les lignes retrouvées dans le relevé et enregistrer leurs vrais montants. À faire après
+                      avoir mis à jour votre solde (carte violette) avec celui de votre banque.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlan((p) => applyToPlan(p, a))
+                        setApplied(month)
+                      }}
+                      className="mt-2 flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-2 font-semibold text-white dark:text-bg"
+                    >
+                      <Sparkles size={14} /> Reporter dans mon pointage
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
 
-      <div className="space-y-4">
-        {/* Non prévu */}
-        <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
-          <h2 className="font-bold">Ce qui n’était pas prévu</h2>
-          <p className="mb-1 text-xs text-muted">Du plus gros au plus petit · touchez pour classer</p>
-          {a.unplanned.length === 0 ? (
-            <p className="py-3 text-sm text-muted">Rien : toutes les dépenses correspondent à vos prévisions.</p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {a.unplanned.map((t) => (
+        <div className="space-y-4">
+          {/* Non prévu */}
+          <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
+            <h2 className="font-bold">Ce qui n’était pas prévu</h2>
+            <p className="mb-1 text-xs text-muted">Du plus gros au plus petit · touchez pour ranger dans une ligne</p>
+            {a.unplanned.length === 0 ? (
+              <p className="py-3 text-sm text-muted">Rien : toutes les dépenses tombent sur vos lignes prévues.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {a.unplanned.map((t) => (
+                  <li key={t.id}>
+                    <TxRow t={t} label={null} onOpen={() => setOpenId(t.id)} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Toutes les opérations */}
+          <details className="group rounded-3xl bg-surface ring-1 ring-line">
+            <summary className="flex cursor-pointer list-none items-center justify-between p-4">
+              <span className="font-bold">Toutes les opérations · {allOfMonth.length}</span>
+              <ChevronDown size={16} className="text-muted transition group-open:rotate-180" />
+            </summary>
+            <ul className="divide-y divide-line px-4 pb-3">
+              {allOfMonth.map((t) => (
                 <li key={t.id}>
-                  <TxRow t={t} onOpen={() => setOpenId(t.id)} />
+                  <TxRow t={t} label={labelOf(lineOf.get(t.id))} onOpen={() => setOpenId(t.id)} />
                 </li>
               ))}
             </ul>
-          )}
-        </section>
-
-        {/* Toutes les opérations */}
-        <details className="group rounded-3xl bg-surface ring-1 ring-line">
-          <summary className="flex cursor-pointer list-none items-center justify-between p-4">
-            <span className="font-bold">Toutes les opérations · {allOfMonth.length}</span>
-            <ChevronDown size={16} className="text-muted transition group-open:rotate-180" />
-          </summary>
-          <ul className="divide-y divide-line px-4 pb-3">
-            {allOfMonth.map((t) => (
-              <li key={t.id}>
-                <TxRow t={t} onOpen={() => setOpenId(t.id)} />
-              </li>
-            ))}
-          </ul>
-        </details>
+          </details>
+        </div>
       </div>
-
-    </div>
-    {sheets}
+      {sheets}
     </>
   )
 }

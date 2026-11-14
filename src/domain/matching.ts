@@ -61,18 +61,56 @@ export function lineFor(t: Transaction, category: string, lines: PlanLine[], pla
     })
     if (named) return named
   }
+  // Même montant que prévu (à 50 centimes près), si une seule ligne correspond (ex. virement de 210 € = loyer)
+  const sameAmount = lines.filter(sameSign).filter((l) => l.planned !== 0 && Math.abs(Math.abs(l.planned) - Math.abs(t.amount)) <= 50)
+  if (sameAmount.length === 1) return sameAmount[0]
+  // Rentrée proche d'un revenu prévu ce mois-ci (à 15 % près)
+  if (t.amount > 0) {
+    const near = lines
+      .filter((l) => l.planned > 0 && Math.abs(l.planned - t.amount) <= l.planned * 0.15)
+      .sort((x, y) => Math.abs(x.planned - t.amount) - Math.abs(y.planned - t.amount))
+    if (near[0]) return near[0]
+  }
   return undefined
 }
 
-export interface CategoryTotal {
-  id: string
-  label: string
-  total: Cents // positif
-  count: number
+/** Valeur « non prévu » (aucune ligne) pour une opération ou un commerçant. */
+export const NONE = '__none__'
+
+/** Lignes de « Mes données » auxquelles rattacher une opération (dépenses ou rentrées selon le signe). */
+export function lineOptions(plan: Plan, sign: number): { id: string; label: string }[] {
+  if (sign < 0)
+    return [
+      ...plan.fixedExpenses.map((f) => ({ id: f.id, label: f.label || 'Dépense fixe' })),
+      ...plan.plannedExpenses.map((e) => ({ id: e.id, label: e.label || 'Grosse dépense' })),
+    ]
+  return [
+    ...plan.incomePeriods.map((i) => ({ id: i.id, label: i.label || 'Revenu' })),
+    ...plan.oneOffIncomes.map((o) => ({ id: o.id, label: o.label || 'Rentrée' })),
+  ]
+}
+
+/** Indice interne : famille de dépense devinée d'après le libellé (sert seulement à trouver la bonne ligne). */
+export function categoryOf(t: Transaction, plan: Plan): string {
+  return categorize(t, plan.txRules?.categories)
+}
+
+/**
+ * Ligne de « Mes données » d'une opération, ou null (non prévue) :
+ * 1. choix fait pour cette opération ; 2. choix fait pour ce commerçant ; 3. devinée (nom, famille).
+ */
+export function assignedLine(t: Transaction, plan: Plan, monthLines: PlanLine[]): string | null {
+  const exists = (id: string) => lineOptions(plan, t.amount).some((o) => o.id === id)
+  if (t.category === NONE) return null
+  if (t.category && exists(t.category)) return t.category
+  const rule = plan.txRules?.links[`m:${merchantKey(t.label)}`]
+  if (rule === NONE) return null
+  if (rule && exists(rule)) return rule
+  return lineFor(t, categoryOf(t, plan), monthLines, plan)?.id ?? null
 }
 
 export interface LineStatus extends PlanLine {
-  /** Total réel des opérations rapprochées (signé) */
+  /** Total réel des opérations rattachées (signé) */
   real: Cents
   txs: Transaction[]
 }
@@ -82,50 +120,53 @@ export interface MonthAnalysis {
   spent: Cents // total des dépenses (positif)
   received: Cents // total des rentrées (positif)
   plannedSpent: Cents // dépenses prévues ce mois (positif)
-  byCategory: CategoryTotal[]
+  /** Toutes vos lignes de dépenses (et de rentrées) : prévu ce mois et réel */
   lines: LineStatus[]
-  /** Dépenses rapprochées d'aucune ligne du plan : là où se cache l'écart */
+  /** Dépenses rattachées à aucune ligne : là où se cache l'écart */
   unplanned: Transaction[]
   unplannedTotal: Cents // positif
 }
 
-export function categoryOf(t: Transaction, plan: Plan): string {
-  return t.category ?? categorize(t, plan.txRules?.categories)
-}
-
-/** Analyse des opérations d'un mois, comparées au plan. */
+/** Analyse des opérations d'un mois, ligne par ligne de « Mes données ». */
 export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): MonthAnalysis {
   const txs = all.filter((t) => monthOfTx(t) === month)
-  const lines: LineStatus[] = planLinesOf(plan, month).map((l) => ({ ...l, real: 0, txs: [] }))
-  const cats = new Map<string, CategoryTotal>()
+  const monthLines = planLinesOf(plan, month)
+  const planned = new Map(monthLines.map((l) => [l.id, l]))
+  const kinds = new Map<string, string>([
+    ...plan.fixedExpenses.map((x) => [x.id, 'fixedExpense'] as [string, string]),
+    ...plan.plannedExpenses.map((x) => [x.id, 'plannedExpense'] as [string, string]),
+    ...plan.incomePeriods.map((x) => [x.id, 'income'] as [string, string]),
+    ...plan.oneOffIncomes.map((x) => [x.id, 'oneOffIncome'] as [string, string]),
+  ])
+  const lines: LineStatus[] = [...lineOptions(plan, -1), ...lineOptions(plan, 1)].map((o) => ({
+    id: o.id,
+    label: o.label,
+    kind: kinds.get(o.id) ?? 'fixedExpense',
+    planned: planned.get(o.id)?.planned ?? 0,
+    real: 0,
+    txs: [],
+  }))
   const unplanned: Transaction[] = []
   let spent = 0
   let received = 0
   for (const t of txs) {
-    const category = categoryOf(t, plan)
-    if (t.amount < 0) {
-      spent += -t.amount
-      const c = cats.get(category) ?? { id: category, label: CATEGORIES.find((x) => x.id === category)?.label ?? 'Autres', total: 0, count: 0 }
-      c.total += -t.amount
-      c.count++
-      cats.set(category, c)
-    } else received += t.amount
-    const line = lineFor(t, category, lines, plan)
-    if (line) {
-      const st = lines.find((l) => l.id === line.id)!
+    if (t.amount < 0) spent += -t.amount
+    else received += t.amount
+    const id = assignedLine(t, plan, monthLines)
+    const st = id ? lines.find((l) => l.id === id) : undefined
+    if (st) {
       st.real += t.amount
-      st.txs.push({ ...t, category, matchedId: line.id })
-    } else if (t.amount < 0) unplanned.push({ ...t, category })
+      st.txs.push({ ...t, matchedId: st.id })
+    } else if (t.amount < 0) unplanned.push(t)
   }
   return {
     month,
     spent,
     received,
-    plannedSpent: lines.filter((l) => l.planned < 0).reduce((s, l) => s - l.planned, 0),
-    byCategory: [...cats.values()].sort((a, b) => b.total - a.total),
+    plannedSpent: monthLines.filter((l) => l.planned < 0).reduce((sum, l) => sum - l.planned, 0),
     lines,
-    unplanned: unplanned.sort((a, b) => a.amount - b.amount),
-    unplannedTotal: unplanned.reduce((s, t) => s - t.amount, 0),
+    unplanned: unplanned.sort((x, y) => x.amount - y.amount),
+    unplannedTotal: unplanned.reduce((sum, t) => sum - t.amount, 0),
   }
 }
 

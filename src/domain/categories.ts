@@ -65,6 +65,7 @@ export const CATEGORIES: Category[] = [
 
 export const categoryById = (id: string | undefined) => CATEGORIES.find((c) => c.id === id) ?? CATEGORIES[CATEGORIES.length - 1]
 
+
 /** Clé d'un commerçant : libellé sans accents, chiffres ni ponctuation (ex. « CARREFOUR CITY 1234 » → « carrefour city »). */
 export function merchantKey(label: string): string {
   return normalizeText(label)

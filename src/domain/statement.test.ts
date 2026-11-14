@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { categorize, merchantKey } from './categories'
-import { analyzeMonth, withCategoryRule, withLinkRule } from './matching'
+import { NONE, analyzeMonth, withLinkRule } from './matching'
 import { detectColumns, parseAmount, parseCsv, parseDate, toTransactions } from './statement'
 import type { Plan } from './types'
 
@@ -97,7 +97,16 @@ describe('analyse du mois', () => {
     expect(a.unplanned.map((t) => t.label)).toEqual(['APPLE STORE', 'UBER EATS'])
     expect(a.unplannedTotal).toBe(125000 + 2390)
     expect(a.unplanned[0].label).toBe('APPLE STORE')
-    expect(a.byCategory[0]).toMatchObject({ id: 'shopping', total: 125000 })
+    // Toutes les lignes de « Mes données » sont présentes, même sans opération
+    expect(a.lines.map((l) => l.id)).toEqual(['loy', 'spo', 'cou', 'cho'])
+    expect(a.lines.find((l) => l.id === 'cho')!.real).toBe(130000) // rentrée de 1 300 € = revenu prévu de 1 300 €
+    
+  })
+
+  it('même montant que prévu : virement de 210 € = loyer', () => {
+    const t = { id: 'v', date: '2026-11-02', amount: -21000, label: 'SCI DUPONT', description: 'Virement novembre' }
+    const a = analyzeMonth(plan(), [t], '2026-11')
+    expect(a.lines.find((l) => l.id === 'loy')!.real).toBe(-21000)
   })
 
   it('un nom identique ne suffit pas si le montant est sans rapport', () => {
@@ -107,13 +116,23 @@ describe('analyse du mois', () => {
     expect(a.unplanned.map((t) => t.label)).toContain('APPLE STORE')
   })
 
-  it('les règles apprises s’appliquent', () => {
-    // « Uber Eats, c'est dans mon budget Courses » et « Apple Store = abonnements »
+  it('classement manuel : pour ce commerçant, pour une opération, ou « non prévu »', () => {
+    // « Uber Eats, c'est dans mon budget Courses » (tous les Uber Eats)
     let p = withLinkRule(plan(), `m:${merchantKey('UBER EATS')}`, 'cou')
-    p = withCategoryRule(p, 'APPLE STORE', 'abonnements')
-    const a = analyzeMonth(p, txs, '2026-11')
+    let a = analyzeMonth(p, txs, '2026-11')
     expect(a.lines.find((l) => l.id === 'cou')!.real).toBe(-6912 - 2390)
-    expect(a.byCategory.find((c) => c.id === 'abonnements')!.total).toBe(125000 + 1214) // + Spotify
     expect(a.unplanned.map((t) => t.label)).toEqual(['APPLE STORE'])
+    // Cet achat Apple Store précis : dans « Courses » aussi (cette opération seulement)
+    const apple = txs.find((t) => t.label === 'APPLE STORE')!
+    a = analyzeMonth(p, txs.map((t) => (t.id === apple.id ? { ...t, category: 'cou' } : t)), '2026-11')
+    expect(a.unplanned).toEqual([])
+    // Et Spotify forcé en « non prévu »
+    p = withLinkRule(p, `m:${merchantKey('Spotify AB')}`, NONE)
+    a = analyzeMonth(p, txs, '2026-11')
+    expect(a.lines.find((l) => l.id === 'spo')!.real).toBe(0)
+    expect(a.unplanned.map((t) => t.label)).toContain('Spotify AB')
+    // Une ligne supprimée de « Mes données » n'est plus proposée : l'opération redevient non prévue
+    a = analyzeMonth({ ...p, fixedExpenses: p.fixedExpenses.filter((f) => f.id !== 'cou') }, txs, '2026-11')
+    expect(a.unplanned.map((t) => t.label)).toContain('UBER EATS')
   })
 })
