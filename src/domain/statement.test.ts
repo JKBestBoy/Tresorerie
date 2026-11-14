@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { categorize, merchantKey } from './categories'
-import { INVEST, NONE, analyzeMonth, withLinkRule } from './matching'
+import { INVEST, NONE, REFUND, analyzeMonth, withLinkRule } from './matching'
 import { detectColumns, parseAmount, parseCsv, parseDate, toTransactions } from './statement'
 import type { Plan } from './types'
 
@@ -160,5 +160,25 @@ describe('analyse du mois', () => {
     const forced = analyzeMonth(p, [{ ...list[3], category: INVEST }, { ...list[0], category: NONE }], '2026-11')
     expect(forced.investTxs.map((t) => t.id)).toEqual(['d'])
     expect(forced.unplanned.map((t) => t.id)).toEqual(['a'])
+  })
+
+  it('remboursements : déduits de la dépense, pas comptés comme rentrée', () => {
+    const tx = (id: string, amount: number, label: string, category?: string) => ({ id, date: '2026-11-12', amount, label, description: '', category })
+    const list = [
+      tx('r', -8000, 'RESTAURANT LE ZINC'), // non prévu
+      tx('a', 4000, 'JEAN MARTIN', REFUND), // un ami rend sa part du resto
+      tx('c', -6000, 'LIDL'),
+      tx('b', 2000, 'MARIE', 'cou'), // part des courses remboursée
+      tx('x', 5000, 'PAPA'), // rentrée non classée
+      tx('y', 3000, 'VINTED', NONE), // autre rentrée, classée
+    ]
+    const a = analyzeMonth(plan(), list, '2026-11')
+    expect(a.spent).toBe(8000 + 6000 - 4000 - 2000)
+    expect(a.refunds).toBe(6000)
+    expect(a.received).toBe(5000 + 3000)
+    expect(a.lines.find((l) => l.id === 'cou')!.real).toBe(-4000)
+    expect(a.unplannedTotal).toBe(4000)
+    expect(a.unplanned.map((t) => t.id)).toEqual(['r', 'a'])
+    expect(a.otherIn.map((t) => t.id).sort()).toEqual(['x', 'y'])
   })
 })

@@ -83,6 +83,20 @@ export const NONE = '__none__'
  */
 export const INVEST = '__invest__'
 
+/** Rentrée qui rembourse une dépense non prévue (ex. un ami vous rend sa part) : déduite du « non prévu ». */
+export const REFUND = '__refund__'
+
+/** Une ligne de dépense (et non de revenu) ? */
+export const isExpenseKind = (kind: string) => kind === 'fixedExpense' || kind === 'plannedExpense'
+
+/**
+ * Lignes auxquelles une opération peut être rattachée : une dépense va sur une ligne de dépense ;
+ * une rentrée va sur un revenu, ou sur une dépense qu'elle rembourse (déduite de cette dépense).
+ */
+export function targetsFor(plan: Plan, amount: Cents): { id: string; label: string }[] {
+  return amount < 0 ? lineOptions(plan, -1) : [...lineOptions(plan, 1), ...lineOptions(plan, -1)]
+}
+
 const INVEST_KEYWORDS = [
   'trade republic', 'traderepublic', 'binance', 'okx', 'coinbase', 'kraken', 'bitpanda', 'bitstack', 'crypto com', 'bitvavo', 'paymium',
   'degiro', 'scalable', 'bourse direct', 'saxo', 'interactive brokers', 'etoro', 'xtb', 'freedom24', 'yomoni', 'nalo', 'linxea', 'ramify',
@@ -126,11 +140,12 @@ export function categoryOf(t: Transaction, plan: Plan): string {
  * 1. choix fait pour cette opération ; 2. choix fait pour ce commerçant ; 3. devinée (nom, famille).
  */
 export function assignedLine(t: Transaction, plan: Plan, monthLines: PlanLine[]): string | null {
-  const exists = (id: string) => id === INVEST || lineOptions(plan, t.amount).some((o) => o.id === id)
-  if (t.category === NONE) return null
+  const exists = (id: string) => id === INVEST || (id === REFUND && t.amount > 0) || targetsFor(plan, t.amount).some((o) => o.id === id)
+  // Rentrée classée « autre rentrée » (NONE) : on la garde telle quelle
+  if (t.category === NONE) return t.amount > 0 ? NONE : null
   if (t.category && exists(t.category)) return t.category
   const rule = plan.txRules?.links[`m:${merchantKey(t.label)}`]
-  if (rule === NONE) return null
+  if (rule === NONE) return t.amount > 0 ? NONE : null
   if (rule && exists(rule)) return rule
   // Placement reconnu : sauf si une de vos lignes porte ce nom (ex. dépense fixe « DCA Binance »)
   if (looksLikeInvestment(t, plan)) return lineFor(t, categoryOf(t, plan), monthLines, plan, true)?.id ?? INVEST
@@ -150,9 +165,13 @@ export interface MonthAnalysis {
   plannedSpent: Cents // dépenses prévues ce mois (positif)
   /** Toutes vos lignes de dépenses (et de rentrées) : prévu ce mois et réel */
   lines: LineStatus[]
-  /** Dépenses rattachées à aucune ligne : là où se cache l'écart */
+  /** Dépenses rattachées à aucune ligne (et leurs remboursements) : là où se cache l'écart */
   unplanned: Transaction[]
-  unplannedTotal: Cents // positif
+  unplannedTotal: Cents // positif, net des remboursements
+  /** Remboursements reçus, déjà déduits des dépenses (positif) */
+  refunds: Cents
+  /** Rentrées rattachées à rien (ni revenu, ni remboursement) */
+  otherIn: Transaction[]
   /** Placé ce mois (net : versements − retraits), hors dépenses et rentrées */
   invested: Cents
   investTxs: Transaction[]
@@ -178,6 +197,8 @@ export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): M
     txs: [],
   }))
   const unplanned: Transaction[] = []
+  const otherIn: Transaction[] = []
+  let refunds = 0
   let spent = 0
   let received = 0
   let invested = 0
@@ -189,13 +210,18 @@ export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): M
       investTxs.push(t)
       continue
     }
-    if (t.amount < 0) spent += -t.amount
-    else received += t.amount
     const st = id ? lines.find((l) => l.id === id) : undefined
+    if (t.amount < 0) spent += -t.amount
+    else if (id === REFUND || (st && isExpenseKind(st.kind))) {
+      // Remboursement : déduit des dépenses, pas compté comme rentrée
+      spent -= t.amount
+      refunds += t.amount
+    } else received += t.amount
     if (st) {
       st.real += t.amount
       st.txs.push({ ...t, matchedId: st.id })
-    } else if (t.amount < 0) unplanned.push(t)
+    } else if (t.amount < 0 || id === REFUND) unplanned.push(t)
+    else otherIn.push(t)
   }
   return {
     month,
@@ -205,6 +231,8 @@ export function analyzeMonth(plan: Plan, all: Transaction[], month: MonthKey): M
     lines,
     unplanned: unplanned.sort((x, y) => x.amount - y.amount),
     unplannedTotal: unplanned.reduce((sum, t) => sum - t.amount, 0),
+    refunds,
+    otherIn,
     invested,
     investTxs: investTxs.sort((x, y) => x.amount - y.amount),
   }

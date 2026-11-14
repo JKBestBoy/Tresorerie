@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircle2, ChevronDown, ChevronRight, X, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, Undo2, X, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
 import { merchantKey } from '../domain/categories'
-import { INVEST, NONE, analyzeMonth, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
+import { INVEST, NONE, REFUND, analyzeMonth, isExpenseKind, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
 import { setActual, startMonthOf, toggleSettled, paidKeys, paidKey } from '../domain/projection'
@@ -279,7 +279,8 @@ function TxSheet({
 }) {
   const merchant = merchantKey(t.label) || t.label
   const [forMerchant, setForMerchant] = useState(false)
-  const options = lineOptions(plan, t.amount)
+  // Dépense → lignes de dépense ; rentrée → dépenses qu'elle peut rembourser (les revenus sont proposés à part)
+  const options = lineOptions(plan, -1)
 
   async function choose(id: string) {
     if (forMerchant) {
@@ -299,9 +300,6 @@ function TxSheet({
         <p className="mt-2 rounded-xl bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent-ink">À classer : encore {queueLeft} après celle-ci</p>
       )}
 
-      <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-muted">
-        <Tag size={14} /> {t.amount < 0 ? 'Quelle dépense de « Mes données » ?' : 'Quel revenu de « Mes données » ?'}
-      </p>
       <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1 text-xs font-semibold">
         <button
           type="button"
@@ -318,39 +316,57 @@ function TxSheet({
           Toujours pour « {merchant} »
         </button>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {options.map((o) => (
-          <button
-            key={o.id}
-            type="button"
-            onClick={() => choose(o.id)}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${
-              o.id === assigned ? 'bg-accent text-white ring-accent dark:text-bg' : 'bg-surface-2 text-ink ring-line hover:bg-accent-soft'
-            }`}
-          >
-            {o.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => choose(NONE)}
-          className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${
-            assigned === null && (t.category === NONE || plan.txRules?.links[`m:${merchantKey(t.label)}`] === NONE)
-              ? 'bg-neg text-white ring-neg'
-              : 'bg-surface-2 text-neg ring-line hover:bg-neg-soft'
-          }`}
-        >
-          Non prévu
-        </button>
-        <button
-          type="button"
-          onClick={() => choose(INVEST)}
-          className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${
-            assigned === INVEST ? 'bg-pos text-white ring-pos' : 'bg-surface-2 text-pos ring-line hover:bg-pos-soft'
-          }`}
-        >
+      {t.amount < 0 ? (
+        <>
+          <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-muted">
+            <Tag size={14} /> Quelle dépense de « Mes données » ?
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {options.map((o) => (
+              <Chip key={o.id} on={o.id === assigned} onClick={() => choose(o.id)}>
+                {o.label}
+              </Chip>
+            ))}
+            <Chip tone="neg" on={assigned === null && explicitNone(t, plan)} onClick={() => choose(NONE)}>
+              Non prévu
+            </Chip>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-muted">
+            <Tag size={14} /> Un revenu ?
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {lineOptions(plan, 1).map((o) => (
+              <Chip key={o.id} on={o.id === assigned} onClick={() => choose(o.id)}>
+                {o.label}
+              </Chip>
+            ))}
+            <Chip on={assigned === NONE} onClick={() => choose(NONE)}>
+              Autre rentrée
+            </Chip>
+          </div>
+          <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-muted">
+            <Undo2 size={14} /> Ou un remboursement ? (déduit de la dépense)
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {options.map((o) => (
+              <Chip key={o.id} on={o.id === assigned} onClick={() => choose(o.id)}>
+                {o.label}
+              </Chip>
+            ))}
+            <Chip tone="neg" on={assigned === REFUND} onClick={() => choose(REFUND)}>
+              Une dépense non prévue
+            </Chip>
+          </div>
+          <p className="mt-1.5 text-xs text-muted">Ex. un ami vous rend sa part du restaurant : choisissez la dépense, elle sera réduite d’autant.</p>
+        </>
+      )}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <Chip tone="pos" on={assigned === INVEST} onClick={() => choose(INVEST)}>
           <PiggyBank size={13} /> Investissement / épargne
-        </button>
+        </Chip>
       </div>
       <p className="mt-2 text-xs text-muted">
         « Investissement / épargne » : argent placé (crypto, courtier, livret…) ou récupéré d’un placement. Il reste à vous, donc il n’est compté ni en
@@ -373,6 +389,29 @@ function TxSheet({
     </Sheet>
   )
 }
+
+function Chip({ on, tone, onClick, children }: { on: boolean; tone?: 'neg' | 'pos'; onClick: () => void; children: React.ReactNode }) {
+  const cls =
+    tone === 'neg'
+      ? on
+        ? 'bg-neg text-white ring-neg'
+        : 'bg-surface-2 text-neg ring-line hover:bg-neg-soft'
+      : tone === 'pos'
+        ? on
+          ? 'bg-pos text-white ring-pos'
+          : 'bg-surface-2 text-pos ring-line hover:bg-pos-soft'
+        : on
+          ? 'bg-accent text-white ring-accent dark:text-bg'
+          : 'bg-surface-2 text-ink ring-line hover:bg-accent-soft'
+  return (
+    <button type="button" onClick={onClick} className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${cls}`}>
+      {children}
+    </button>
+  )
+}
+
+/** Choix « non prévu » / « autre rentrée » fait explicitement (pour l'opération ou son commerçant) */
+const explicitNone = (t: Transaction, plan: Plan) => t.category === NONE || plan.txRules?.links[`m:${merchantKey(t.label)}`] === NONE
 
 function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onOpen: () => void }) {
   const invest = label === INVEST_LABEL
@@ -397,6 +436,10 @@ function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onO
 }
 
 const INVEST_LABEL = 'Investissement'
+// Filtres spéciaux de la liste des opérations
+const ALL_IN = '__all_in__'
+const ALL_OUT = '__all_out__'
+const OTHER_IN = '__other_in__'
 
 function Bar({ value, planned }: { value: number; planned: number }) {
   // Barre du réel ; trait = montant prévu ; rouge si dépassé
@@ -416,7 +459,7 @@ function applyToPlan(plan: Plan, a: MonthAnalysis): Plan {
   const keys = paidKeys(p)
   for (const l of a.lines) {
     if (l.txs.length === 0 || l.planned === 0) continue
-    p = setActual(p, a.month, l.id, Math.abs(l.real))
+    p = setActual(p, a.month, l.id, Math.max(0, isExpenseKind(l.kind) ? -l.real : l.real))
     if (!keys.has(paidKey(a.month, l.id))) p = toggleSettled(p, a.month, l.id)
   }
   return p
@@ -452,29 +495,61 @@ export function SpendingView({
   const lineOf = useMemo(() => {
     const m = new Map<string, string | null>()
     for (const l of a.lines) for (const t of l.txs) m.set(t.id, l.id)
-    for (const t of a.unplanned) m.set(t.id, null)
+    for (const t of a.unplanned) m.set(t.id, t.amount > 0 ? REFUND : null)
+    for (const t of a.otherIn) m.set(t.id, explicitNone(t, plan) ? NONE : null)
     for (const t of a.investTxs) m.set(t.id, INVEST)
     return m
-  }, [a])
-  const labelOf = (id: string | null | undefined) => (id === INVEST ? INVEST_LABEL : id ? (a.lines.find((l) => l.id === id)?.label ?? null) : null)
+  }, [a, plan])
+  const lineLabel = (id: string) => a.lines.find((l) => l.id === id)?.label ?? null
+  /** Étiquette affichée sur une opération */
+  const labelOf = (id: string | null | undefined, t?: Transaction) => {
+    if (!id) return null
+    if (id === INVEST) return INVEST_LABEL
+    if (id === REFUND) return 'Remb. non prévu'
+    if (id === NONE) return 'Autre rentrée'
+    const l = a.lines.find((x) => x.id === id)
+    if (!l) return null
+    return t && t.amount > 0 && isExpenseKind(l.kind) ? `Remb. ${l.label}` : l.label
+  }
   const allOfMonth = useMemo(
     () => tx.transactions.filter((t) => t.date.startsWith(month)).sort((x, y) => y.date.localeCompare(x.date)),
     [tx.transactions, month],
   )
-  // À classer : dépenses non rattachées, sans choix « non prévu » explicite
-  const toSort = a.unplanned.filter((t) => t.category !== NONE && plan.txRules?.links[`m:${merchantKey(t.label)}`] !== NONE)
+  // À classer : dépenses et rentrées rattachées à rien, sans choix explicite
+  const toSort = [...a.unplanned.filter((t) => t.amount < 0), ...a.otherIn].filter((t) => !explicitNone(t, plan))
   const expenseLines = a.lines.filter((l) => l.kind === 'fixedExpense' || l.kind === 'plannedExpense').filter((l) => l.planned < 0 || l.real < 0)
   const canApply = month >= startMonthOf(plan) && a.lines.some((l) => l.txs.length > 0 && l.planned !== 0)
-  // Catégorie d'une opération pour le filtre : sa ligne, INVEST, ou NONE (non classée)
-  const tagOf = (id: string) => lineOf.get(id) ?? NONE
-  const filterLabel = (id: string) => (id === NONE ? 'Non prévu' : id === INVEST ? INVEST_LABEL : (labelOf(id) ?? 'Catégorie'))
+  // Catégorie d'une opération pour le filtre : sa ligne, INVEST, NONE (non prévu, remboursements compris) ou OTHER_IN
+  const tagOf = (t: Transaction) => {
+    const v = lineOf.get(t.id)
+    if (v === REFUND) return NONE
+    if (t.amount > 0 && (v == null || v === NONE)) return OTHER_IN
+    return v ?? NONE
+  }
+  const filterLabel = (id: string) =>
+    id === ALL_IN
+      ? 'Toutes les entrées'
+      : id === ALL_OUT
+        ? 'Toutes les sorties'
+        : id === NONE
+          ? 'Non prévu'
+          : id === OTHER_IN
+            ? 'Autres rentrées'
+            : id === INVEST
+              ? INVEST_LABEL
+              : (lineLabel(id) ?? 'Catégorie')
+  const matches = (t: Transaction, f: string) => (f === ALL_IN ? t.amount > 0 : f === ALL_OUT ? t.amount < 0 : tagOf(t) === f)
   const filterOptions = (() => {
     const counts = new Map<string, number>()
-    for (const t of allOfMonth) counts.set(tagOf(t.id), (counts.get(tagOf(t.id)) ?? 0) + 1)
-    const order = [...a.lines.map((l) => l.id), INVEST, NONE]
-    return order.filter((id) => counts.has(id)).map((id) => ({ id, label: filterLabel(id), count: counts.get(id)! }))
+    for (const t of allOfMonth) counts.set(tagOf(t), (counts.get(tagOf(t)) ?? 0) + 1)
+    const order = [...a.lines.map((l) => l.id), OTHER_IN, INVEST, NONE]
+    return [
+      { id: ALL_IN, label: filterLabel(ALL_IN), count: allOfMonth.filter((t) => t.amount > 0).length },
+      { id: ALL_OUT, label: filterLabel(ALL_OUT), count: allOfMonth.filter((t) => t.amount < 0).length },
+      ...order.filter((id) => counts.has(id)).map((id) => ({ id, label: filterLabel(id), count: counts.get(id)! })),
+    ]
   })()
-  const shown = filter ? allOfMonth.filter((t) => tagOf(t.id) === filter) : allOfMonth
+  const shown = filter ? allOfMonth.filter((t) => matches(t, filter)) : allOfMonth
   const currentId = queue ? queue[0] : openId
   const open = tx.transactions.find((t) => t.id === currentId) ?? null
   const next = () => setQueue((q) => (q && q.length > 1 ? q.slice(1) : null))
@@ -550,15 +625,21 @@ export function SpendingView({
           {/* Synthèse */}
           <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-xs text-muted">Dépensé</p>
+              <button type="button" onClick={() => showTag(ALL_OUT)} className="-m-1.5 rounded-2xl p-1.5 text-left hover:bg-surface-2">
+                <p className="flex items-center text-xs text-muted">
+                  Dépensé <ChevronRight size={12} />
+                </p>
                 <p className="num text-2xl font-extrabold">{eur(a.spent)}</p>
                 <p className="text-xs text-muted">prévu {eur(a.plannedSpent)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted">Rentré</p>
+                {a.refunds > 0 && <p className="text-xs text-pos">dont {eur(a.refunds)} remboursés déduits</p>}
+              </button>
+              <button type="button" onClick={() => showTag(ALL_IN)} className="-m-1.5 rounded-2xl p-1.5 text-left hover:bg-surface-2">
+                <p className="flex items-center text-xs text-muted">
+                  Rentré <ChevronRight size={12} />
+                </p>
                 <p className="num text-2xl font-extrabold text-pos">{eur(a.received)}</p>
-              </div>
+                <p className="text-xs text-muted">voir les entrées</p>
+              </button>
             </div>
             <div className="mt-4 rounded-2xl bg-neg-soft px-3.5 py-3 ring-1 ring-neg/15">
               <p className="flex items-center gap-1 text-sm font-semibold text-neg">
@@ -612,7 +693,7 @@ export function SpendingView({
             <p className="-mt-2 mb-3 text-xs text-muted">Touchez une catégorie pour voir ses opérations.</p>
             <ul className="space-y-1.5">
               {expenseLines.map((l) => {
-                const real = Math.abs(l.real)
+                const real = Math.max(0, -l.real)
                 const planned = Math.abs(l.planned)
                 const over = planned > 0 && real > planned + 50
                 return (
@@ -697,7 +778,7 @@ export function SpendingView({
               <ul className="divide-y divide-line">
                 {a.unplanned.map((t) => (
                   <li key={t.id}>
-                    <TxRow t={t} label={null} onOpen={() => setOpenId(t.id)} />
+                    <TxRow t={t} label={labelOf(lineOf.get(t.id), t)} onOpen={() => setOpenId(t.id)} />
                   </li>
                 ))}
               </ul>
@@ -764,7 +845,7 @@ export function SpendingView({
                 <ul className="mt-1 divide-y divide-line">
                   {shown.map((t) => (
                     <li key={t.id}>
-                      <TxRow t={t} label={labelOf(lineOf.get(t.id))} onOpen={() => setOpenId(t.id)} />
+                      <TxRow t={t} label={labelOf(lineOf.get(t.id), t)} onOpen={() => setOpenId(t.id)} />
                     </li>
                   ))}
                 </ul>
