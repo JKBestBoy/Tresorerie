@@ -7,6 +7,8 @@ import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
 import { setActual, startMonthOf, toggleSettled, paidKeys, paidKey } from '../domain/projection'
 import { detectColumns, parseCsv, toTransactions, type ColumnRole, type ParsedCsv, type Transaction } from '../domain/statement'
+import { parsePdfLines, type PdfOptions } from '../domain/pdfStatement'
+import { pdfToLines } from '../sync/pdfText'
 import type { Cents, Plan } from '../domain/types'
 import type { useTransactions } from '../sync/transactions'
 import { Help } from './Help'
@@ -50,24 +52,58 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
 
 /** Import d'un relevé : lecture, colonnes reconnues (modifiables), aperçu, import. */
 function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (txs: Transaction[]) => Promise<number> }) {
-  const [csv, setCsv] = useState<ParsedCsv | null>(null)
-  const [roles, setRoles] = useState<ColumnRole[]>([])
+  const [csvFile, setCsvFile] = useState<ParsedCsv | null>(null)
+  const [csvRoles, setCsvRoles] = useState<ColumnRole[]>([])
+  // Relevé PDF : lignes de texte + réglages de lecture
+  const [pdfLines, setPdfLines] = useState<string[] | null>(null)
+  const [pdfOpts, setPdfOpts] = useState<Partial<PdfOptions>>({})
+  const [reading, setReading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<number | null>(null)
+  const pdf = useMemo(() => (pdfLines ? parsePdfLines(pdfLines, pdfOpts) : null), [pdfLines, pdfOpts])
+  const csv = pdf ? pdf.csv : csvFile
+  const roles = pdf ? pdf.roles : csvRoles
+  const setRoles = setCsvRoles
   const result = useMemo(() => (csv ? toTransactions(csv, roles) : null), [csv, roles])
   const dates = result?.transactions.map((t) => t.date).sort() ?? []
 
   async function read(file: File) {
     setError(null)
+    if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+      setReading(true)
+      try {
+        const lines = await pdfToLines(file)
+        const parsed = parsePdfLines(lines)
+        if (parsed.csv.rows.length === 0) {
+          setError('Aucune opération trouvée dans ce PDF. S’il s’agit d’un scan (image), il ne peut pas être lu : exportez plutôt le relevé en CSV.')
+          return
+        }
+        setPdfOpts({})
+        setPdfLines(lines)
+      } catch (e) {
+        setError(
+          /password/i.test(String(e))
+            ? 'Ce PDF est protégé par un mot de passe : il ne peut pas être lu.'
+            : 'Impossible de lire ce PDF. Essayez l’export CSV de votre banque.',
+        )
+      } finally {
+        setReading(false)
+      }
+      return
+    }
     const text = await file.text()
     const parsed = parseCsv(text)
     if (parsed.header.length < 2 || parsed.rows.length === 0) {
-      setError('Ce fichier ne ressemble pas à un relevé CSV. Exportez votre relevé au format CSV depuis votre banque.')
+      setError('Ce fichier ne ressemble pas à un relevé (PDF ou CSV).')
       return
     }
-    setCsv(parsed)
-    setRoles(detectColumns(parsed.header))
+    setCsvFile(parsed)
+    setCsvRoles(detectColumns(parsed.header))
+  }
+  const reset = () => {
+    setCsvFile(null)
+    setPdfLines(null)
   }
 
   const ok = roles.includes('date') && (roles.includes('amount') || roles.includes('debit') || roles.includes('credit'))
@@ -87,8 +123,8 @@ function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (tx
       ) : !csv ? (
         <div className="mt-3 space-y-3 text-sm">
           <p className="text-muted">
-            Exportez votre relevé au format <strong className="text-ink">CSV</strong> depuis votre banque, puis choisissez le fichier. Tout est lu sur
-            votre téléphone ; seules les opérations (date, montant, libellé) sont enregistrées dans votre compte.
+            Choisissez votre relevé bancaire au format <strong className="text-ink">PDF</strong> ou <strong className="text-ink">CSV</strong>. Tout
+            est lu sur votre téléphone ; seules les opérations (date, montant, libellé) sont enregistrées dans votre compte.
           </p>
           <details className="rounded-xl bg-surface-2 px-3 py-2.5 text-xs text-muted">
             <summary className="cursor-pointer font-semibold text-ink">Comment exporter depuis bunq ?</summary>
@@ -99,13 +135,47 @@ function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (tx
           </details>
           <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-line px-4 py-8 text-center hover:border-accent/50 hover:bg-accent-soft">
             <FileUp size={28} className="text-accent" />
-            <span className="font-semibold">Choisir le fichier CSV</span>
-            <input type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
+            <span className="font-semibold">{reading ? 'Lecture du relevé…' : 'Choisir le relevé (PDF ou CSV)'}</span>
+            <input
+              type="file"
+              accept=".pdf,application/pdf,.csv,text/csv,text/plain"
+              className="hidden"
+              disabled={reading}
+              onChange={(e) => e.target.files?.[0] && read(e.target.files[0])}
+            />
           </label>
           {error && <p className="rounded-xl bg-neg-soft px-3 py-2 text-neg">{error}</p>}
         </div>
       ) : (
         <div className="mt-3 space-y-3 text-sm">
+          {pdf ? (
+            <div className="space-y-2">
+              <p className="text-muted">Relevé PDF lu : vérifiez quelques lignes ci-dessous. Si les montants semblent faux, ajustez :</p>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-muted">Quand une ligne contient deux montants</span>
+                <select
+                  className={`${inputClass} py-2 text-sm`}
+                  value={pdfOpts.pick ?? pdf.suggestedPick}
+                  onChange={(e) => setPdfOpts({ ...pdfOpts, pick: e.target.value as PdfOptions['pick'] })}
+                >
+                  <option value="secondLast">Le montant est l’avant-dernier (le dernier est le solde)</option>
+                  <option value="last">Le montant est le dernier de la ligne</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-muted">Montants écrits sans + ni −</span>
+                <select
+                  className={`${inputClass} py-2 text-sm`}
+                  value={pdfOpts.unsigned ?? 'expense'}
+                  onChange={(e) => setPdfOpts({ ...pdfOpts, unsigned: e.target.value as PdfOptions['unsigned'] })}
+                >
+                  <option value="expense">Ce sont des dépenses</option>
+                  <option value="income">Ce sont des rentrées</option>
+                </select>
+              </label>
+            </div>
+          ) : (
+          <>
           <p className="text-muted">Vérifiez que les colonnes sont bien reconnues :</p>
           <div className="space-y-2">
             {csv.header.map((h, i) => (
@@ -128,6 +198,8 @@ function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (tx
               </div>
             ))}
           </div>
+          </>
+          )}
           {result && ok && (
             <div className="rounded-xl bg-surface-2 px-3 py-2.5">
               <p className="font-semibold">
@@ -141,7 +213,7 @@ function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (tx
               </p>
               {result.skipped > 0 && <p className="text-xs text-warn">{result.skipped} ligne(s) illisible(s) ignorée(s)</p>}
               <ul className="mt-2 space-y-1 text-xs">
-                {result.transactions.slice(0, 3).map((t) => (
+                {result.transactions.slice(0, pdf ? 8 : 3).map((t) => (
                   <li key={t.id} className="flex justify-between gap-2">
                     <span className="truncate">
                       {day(t.date)} · {t.label}
@@ -155,7 +227,7 @@ function ImportSheet({ onClose, onImport }: { onClose: () => void; onImport: (tx
           {!ok && <p className="rounded-xl bg-warn-soft px-3 py-2 text-warn">Indiquez au moins la colonne Date et la colonne Montant.</p>}
           {error && <p className="rounded-xl bg-neg-soft px-3 py-2 text-neg">{error}</p>}
           <div className="flex gap-2">
-            <button type="button" onClick={() => setCsv(null)} className="flex-1 rounded-full py-2.5 font-semibold text-muted hover:bg-surface-2">
+            <button type="button" onClick={reset} className="flex-1 rounded-full py-2.5 font-semibold text-muted hover:bg-surface-2">
               Autre fichier
             </button>
             <button
