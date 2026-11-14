@@ -93,6 +93,11 @@ export interface Plan {
   /** Investissements (absent sur les plans créés avant leur ajout) */
   investments?: Investment[]
   /**
+   * Opérations du relevé ajoutées à un investissement : id de l'opération → investissement crédité
+   * et quantité ajoutée (négative pour un retrait), pour pouvoir annuler.
+   */
+  investLinks?: Record<string, { investmentId: string; quantity: number }>
+  /**
    * Pointage du mois de départ : identifiants des flux déjà passés sur le compte
    * (donc déjà inclus dans le solde de départ). Ignoré si `month` n'est plus le mois de départ.
    * Remplace les anciennes cases `settledInStartMonth` de chaque élément.

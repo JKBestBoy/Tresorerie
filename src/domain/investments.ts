@@ -53,3 +53,57 @@ export function investmentsSummary(plan: Plan, quotes: Quotes) {
     change,
   }
 }
+
+/**
+ * Ajoute une opération du relevé à un investissement : un versement de 500 € sur du bitcoin à 70 000 €
+ * ajoute 0,00714 BTC. Valeur fixe (livret…) : la valeur augmente du montant. Retrait : l'inverse.
+ * `amount` est le montant de l'opération (négatif = argent sorti du compte = placé).
+ */
+export function linkTxToInvestment(plan: Plan, txId: string, amount: Cents, investmentId: string, quotes: Quotes): Plan {
+  const base = unlinkTx(plan, txId)
+  const invs = base.investments ?? []
+  const inv = invs.find((i) => i.id === investmentId)
+  if (!inv) return base
+  const placed = -amount // positif = versé sur l'investissement
+  let next: Investment
+  let quantity: number
+  if (inv.kind === 'fixed') {
+    // Valeur fixe : on garde la quantité, on augmente la valeur
+    const qty = inv.quantity || 1
+    quantity = 0
+    next = { ...inv, quantity: qty, manualUnitPrice: Math.max(0, Math.round(inv.manualUnitPrice + placed / qty)) }
+  } else {
+    const price = valueOf(inv, quotes).unitPrice
+    if (!(price > 0)) return base
+    quantity = placed / 100 / price
+    next = { ...inv, quantity: Math.max(0, inv.quantity + quantity) }
+  }
+  return {
+    ...base,
+    investments: invs.map((i) => (i.id === inv.id ? next : i)),
+    investLinks: { ...base.investLinks, [txId]: { investmentId, quantity: inv.kind === 'fixed' ? placed : quantity } },
+  }
+}
+
+/** Annule l'ajout d'une opération à un investissement (quantité, ou valeur pour une valeur fixe). */
+export function unlinkTx(plan: Plan, txId: string): Plan {
+  const link = plan.investLinks?.[txId]
+  if (!link) return plan
+  const rest = { ...plan.investLinks }
+  delete rest[txId]
+  const investments = (plan.investments ?? []).map((i) => {
+    if (i.id !== link.investmentId) return i
+    if (i.kind === 'fixed') return { ...i, manualUnitPrice: Math.max(0, Math.round(i.manualUnitPrice - link.quantity / (i.quantity || 1))) }
+    return { ...i, quantity: Math.max(0, i.quantity - link.quantity) }
+  })
+  return { ...plan, investments, investLinks: rest }
+}
+
+/** Investissement probable pour une opération : celui dont le compte ou le nom apparaît dans le libellé. */
+export function guessInvestment(plan: Plan, text: string): Investment | undefined {
+  const norm = (s: string) => ` ${s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `
+  const t = norm(text)
+  const hit = (s?: string) => !!s && norm(s).trim().length >= 3 && t.includes(norm(s))
+  const invs = plan.investments ?? []
+  return invs.find((i) => hit(i.label)) ?? (invs.filter((i) => hit(i.account)).length === 1 ? invs.find((i) => hit(i.account)) : undefined)
+}

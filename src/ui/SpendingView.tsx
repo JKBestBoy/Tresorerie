@@ -10,6 +10,7 @@ import { detectColumns, parseCsv, toTransactions, type ColumnRole, type ParsedCs
 import { parsePdfLines, type PdfOptions } from '../domain/pdfStatement'
 import { pdfToLines } from '../sync/pdfText'
 import type { Cents, Plan } from '../domain/types'
+import { guessInvestment, linkTxToInvestment, unlinkTx, valueOf, type Quotes } from '../domain/investments'
 import type { useTransactions } from '../sync/transactions'
 import { Help } from './Help'
 import { inputClass } from './inputs'
@@ -266,7 +267,9 @@ function TxSheet({
   onClose,
   queueLeft,
   onNext,
+  quotes,
 }: {
+  quotes: Quotes
   t: Transaction
   plan: Plan
   /** Ligne actuelle (null = non prévue) */
@@ -282,11 +285,23 @@ function TxSheet({
   // Dépense → lignes de dépense ; rentrée → dépenses qu'elle peut rembourser (les revenus sont proposés à part)
   const options = lineOptions(plan, -1)
 
+  const investments = plan.investments ?? []
+  const link = plan.investLinks?.[t.id]
+  const guess = guessInvestment(plan, `${t.label} ${t.description}`)
+
   async function choose(id: string) {
+    // Plus un investissement : on retire ce qui avait été ajouté au patrimoine
+    if (id !== INVEST && link) setPlan((p) => unlinkTx(p, t.id))
     if (forMerchant) {
       setPlan((p) => withLinkRule(p, `m:${merchantKey(t.label)}`, id))
       await setCategory(t.id, null)
     } else await setCategory(t.id, id)
+    // Investissement : on reste sur la fiche pour choisir où l'ajouter
+    if (onNext && !(id === INVEST && investments.length > 0)) onNext()
+  }
+
+  function linkTo(investmentId: string | null) {
+    setPlan((p) => (investmentId ? linkTxToInvestment(p, t.id, t.amount, investmentId, quotes) : unlinkTx(p, t.id)))
     if (onNext) onNext()
   }
 
@@ -368,6 +383,50 @@ function TxSheet({
           <PiggyBank size={13} /> Investissement / épargne
         </Chip>
       </div>
+      {assigned === INVEST && (
+        <div className="mt-3 rounded-2xl bg-pos-soft p-3 ring-1 ring-pos/15">
+          <p className="text-xs font-semibold text-pos">
+            {t.amount < 0 ? 'Ajouter ce montant à quel investissement ?' : 'Retirer ce montant de quel investissement ?'}
+          </p>
+          {investments.length === 0 ? (
+            <p className="mt-1 text-xs text-muted">Ajoutez vos investissements dans « Mes données » pour que ce montant y soit compté.</p>
+          ) : (
+            <>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {investments.map((inv) => {
+                  const priced = inv.kind === 'fixed' || valueOf(inv, quotes).unitPrice > 0
+                  return (
+                    <button
+                      key={inv.id}
+                      type="button"
+                      disabled={!priced}
+                      onClick={() => linkTo(inv.id)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition disabled:opacity-40 ${
+                        link?.investmentId === inv.id
+                          ? 'bg-pos text-white ring-pos'
+                          : `bg-surface text-ink hover:bg-surface-2 ${!link && guess?.id === inv.id ? 'ring-2 ring-pos' : 'ring-line'}`
+                      }`}
+                    >
+                      {inv.label}
+                      {inv.account ? <span className="font-normal opacity-70"> · {inv.account}</span> : null}
+                    </button>
+                  )
+                })}
+                {link && (
+                  <button type="button" onClick={() => linkTo(null)} className="rounded-full px-3 py-1.5 text-xs font-semibold text-muted hover:bg-surface">
+                    Ne pas ajouter
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-muted">
+                {link
+                  ? `Ajouté : ${linkText(plan, link)}. Votre trésorerie totale ne baisse donc pas.`
+                  : 'La quantité est calculée au cours du jour. Sans ça, l’argent sort de vos liquidités sans apparaître dans vos investissements.'}
+              </p>
+            </>
+          )}
+        </div>
+      )}
       <p className="mt-2 text-xs text-muted">
         « Investissement / épargne » : argent placé (crypto, courtier, livret…) ou récupéré d’un placement. Il reste à vous, donc il n’est compté ni en
         dépense ni en rentrée.
@@ -388,6 +447,15 @@ function TxSheet({
       </div>
     </Sheet>
   )
+}
+
+/** « +0,0071 Bitcoin » ou « +500 € Livret A » */
+function linkText(plan: Plan, link: { investmentId: string; quantity: number }) {
+  const inv = plan.investments?.find((i) => i.id === link.investmentId)
+  if (!inv) return '—'
+  if (inv.kind === 'fixed') return `${link.quantity >= 0 ? '+' : ''}${exact(link.quantity)} sur ${inv.label}`
+  const q = link.quantity.toLocaleString('fr-FR', { maximumSignificantDigits: 4 })
+  return `${link.quantity >= 0 ? '+' : ''}${q} ${inv.label}`
 }
 
 function Chip({ on, tone, onClick, children }: { on: boolean; tone?: 'neg' | 'pos'; onClick: () => void; children: React.ReactNode }) {
@@ -414,7 +482,7 @@ function Chip({ on, tone, onClick, children }: { on: boolean; tone?: 'neg' | 'po
 const explicitNone = (t: Transaction, plan: Plan) => t.category === NONE || plan.txRules?.links[`m:${merchantKey(t.label)}`] === NONE
 
 function TxRow({ t, label, onOpen }: { t: Transaction; label: string | null; onOpen: () => void }) {
-  const invest = label === INVEST_LABEL
+  const invest = !!label?.startsWith(INVEST_LABEL)
   return (
     <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 py-2.5 text-left text-sm hover:bg-surface-2">
       <span className="min-w-0 flex-1">
@@ -469,10 +537,12 @@ export function SpendingView({
   plan,
   setPlan,
   tx,
+  quotes,
 }: {
   plan: Plan
   setPlan: (u: (p: Plan) => Plan) => void
   tx: ReturnType<typeof useTransactions>
+  quotes: Quotes
 }) {
   const [importing, setImporting] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -504,7 +574,10 @@ export function SpendingView({
   /** Étiquette affichée sur une opération */
   const labelOf = (id: string | null | undefined, t?: Transaction) => {
     if (!id) return null
-    if (id === INVEST) return INVEST_LABEL
+    if (id === INVEST) {
+      const inv = t && plan.investments?.find((i) => i.id === plan.investLinks?.[t.id]?.investmentId)
+      return inv ? `${INVEST_LABEL} → ${inv.label}` : INVEST_LABEL
+    }
     if (id === REFUND) return 'Remb. non prévu'
     if (id === NONE) return 'Autre rentrée'
     const l = a.lines.find((x) => x.id === id)
@@ -550,6 +623,7 @@ export function SpendingView({
     ]
   })()
   const shown = filter ? allOfMonth.filter((t) => matches(t, filter)) : allOfMonth
+  const unlinked = a.investTxs.filter((t) => !plan.investLinks?.[t.id]).length
   const currentId = queue ? queue[0] : openId
   const open = tx.transactions.find((t) => t.id === currentId) ?? null
   const next = () => setQueue((q) => (q && q.length > 1 ? q.slice(1) : null))
@@ -565,6 +639,7 @@ export function SpendingView({
           assigned={lineOf.get(open.id) ?? null}
           setPlan={setPlan}
           setCategory={tx.setCategory}
+          quotes={quotes}
           onClose={() => {
             setOpenId(null)
             setQueue(null)
@@ -660,7 +735,14 @@ export function SpendingView({
                     <p>Pensez à mettre à jour la quantité de l’investissement concerné dans « Mes données » pour que votre patrimoine reste juste.</p>
                   </Help>
                 </p>
-                <p className="text-xs text-muted">{a.investTxs.length} opération(s) · pas comptées comme dépenses, ça reste votre argent</p>
+                <p className="text-xs text-muted">
+                  {a.investTxs.length} opération(s) · pas comptées comme dépenses, ça reste votre argent
+                  {unlinked > 0 && (plan.investments?.length ?? 0) > 0 && (
+                    <span className="block font-semibold text-warn">
+                      {unlinked} à ajouter à vos investissements (touchez-les dans « Investi ce mois »)
+                    </span>
+                  )}
+                </p>
               </div>
             )}
           </section>
@@ -719,6 +801,27 @@ export function SpendingView({
                   </li>
                 )
               })}
+              {a.investTxs.length > 0 && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => showTag(INVEST)}
+                    className="-mx-2 block w-[calc(100%+1rem)] rounded-xl px-2 py-1 text-left hover:bg-surface-2"
+                  >
+                    <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                      <span className="flex min-w-0 items-center gap-1 truncate font-semibold text-pos">
+                        <PiggyBank size={14} /> Investissement · {a.investTxs.length}
+                      </span>
+                      <span className="num flex shrink-0 items-center">
+                        <span className="font-bold text-pos">{eur(Math.abs(a.invested))}</span>
+                        <span className="text-xs text-muted">&nbsp;→ patrimoine</span>
+                        <ChevronRight size={14} className="ml-0.5 text-muted" />
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-pos/70" />
+                  </button>
+                </li>
+              )}
               {a.unplannedTotal > 0 && (
                 <li>
                   <button
@@ -795,7 +898,7 @@ export function SpendingView({
               <ul className="divide-y divide-line">
                 {a.investTxs.map((t) => (
                   <li key={t.id}>
-                    <TxRow t={t} label={INVEST_LABEL} onOpen={() => setOpenId(t.id)} />
+                    <TxRow t={t} label={labelOf(INVEST, t)} onOpen={() => setOpenId(t.id)} />
                   </li>
                 ))}
               </ul>

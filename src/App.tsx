@@ -259,7 +259,7 @@ function Main({
           />
         )}
         {!onboarding && plan && tab === 'history' && <HistoryView plan={plan} />}
-        {!onboarding && plan && tab === 'spending' && <SpendingView plan={plan} setPlan={commit} tx={tx} />}
+        {!onboarding && plan && tab === 'spending' && <SpendingView plan={plan} setPlan={commit} tx={tx} quotes={live.quotes} />}
         {!onboarding && plan && tab === 'data' && <PlanEditor plan={plan} setPlan={setPlan} quotes={live.quotes} />}
         {!onboarding && plan && tab === 'results' && (
           <ResultsView plan={plan} onEdit={() => setTab('data')} live={live} setPlan={commit} />
