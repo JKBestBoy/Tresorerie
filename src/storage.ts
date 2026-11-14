@@ -50,3 +50,11 @@ export async function requestPersistence(): Promise<void> {
     /* non supporté : sans conséquence */
   }
 }
+
+/** Opérations importées (mode « sur cet appareil », sans compte en ligne). */
+export async function loadLocalTransactions(): Promise<import('./domain/statement').Transaction[]> {
+  return ((await (await db()).get(STORE, 'transactions')) as import('./domain/statement').Transaction[] | undefined) ?? []
+}
+export async function saveLocalTransactions(list: import('./domain/statement').Transaction[]): Promise<void> {
+  await (await db()).put(STORE, list, 'transactions')
+}

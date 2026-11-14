@@ -119,6 +119,12 @@ export interface Plan {
    * en cours de mois, ou saisi à la main). Sinon, il est reconstitué : solde saisi − ce qui est déjà passé.
    */
   monthStart?: { month: MonthKey; amount: Cents }
+  /**
+   * Règles apprises pour les relevés importés :
+   * - categories : commerçant (clé) → catégorie
+   * - links : « m:commerçant » ou « c:catégorie » → ligne du plan (dépense fixe, revenu…)
+   */
+  txRules?: { categories: Record<string, string>; links: Record<string, string> }
   /** Mois écoulés archivés à chaque mise à jour du solde (du plus ancien au plus récent) */
   history?: HistoryMonth[]
   /** Ancien réglage (part des investissements comptée dans la sécurité) : n'est plus utilisé. */

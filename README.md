@@ -18,3 +18,10 @@ Vite + React + TypeScript + Tailwind + Recharts. Données stockées localement (
 - Section « Investissements » : crypto (cours CoinGecko), actions/ETF (cours Yahoo Finance, convertis en euros), valeur fixe.
 - Les cours passent par la fonction Supabase `quotes` (`supabase/functions/quotes/index.ts`), réservée aux utilisateurs connectés, rafraîchie chaque minute.
 - La part des investissements comptée dans la sécurité (matelas, montant libre) est réglable (100 % par défaut).
+
+## Import de relevés bancaires
+
+- Onglet « Dépenses » : import d'un relevé CSV (bunq et autres banques), colonnes reconnues automatiquement et modifiables.
+- Catégorisation par mots-clés + règles apprises par commerçant ; rapprochement avec les lignes du plan.
+- Analyse du mois : par catégorie, prévu ou réel, dépenses hors prévisions ; report dans le pointage.
+- Opérations stockées dans la table `transactions` (RLS par utilisateur) ou sur l'appareil en mode local.

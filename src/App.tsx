@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BarChart3, Cloud, CloudOff, LogOut, Monitor, Moon, PencilLine, Settings2, Sun, TriangleAlert, X, History as HistoryIcon } from 'lucide-react'
+import { BarChart3, Cloud, CloudOff, LogOut, Monitor, Moon, PencilLine, Settings2, Sun, TriangleAlert, X, History as HistoryIcon, Receipt } from 'lucide-react'
 import { clearLocal } from './storage'
 import { remoteEnabled } from './sync/config'
 import { supabase } from './sync/remote'
@@ -11,11 +11,13 @@ import { PlanEditor } from './ui/PlanEditor'
 import { ResultsView } from './ui/ResultsView'
 import { HistoryView } from './ui/HistoryView'
 import { Onboarding } from './ui/Onboarding'
+import { SpendingView } from './ui/SpendingView'
+import { useTransactions } from './sync/transactions'
 import { useTheme, type ThemeChoice } from './ui/theme'
 import { usePlan, type SyncStatus } from './usePlan'
 import { useQuotes } from './sync/quotes'
 
-type Tab = 'results' | 'data' | 'history'
+type Tab = 'results' | 'spending' | 'data' | 'history'
 
 export default function App() {
   return (
@@ -65,6 +67,7 @@ function StatusPill({ status, dirty, online }: { status: SyncStatus; dirty: bool
 
 const TABS = [
   ['results', BarChart3, 'Résultats'],
+  ['spending', Receipt, 'Dépenses'],
   ['data', PencilLine, 'Mes données'],
   ['history', HistoryIcon, 'Historique'],
 ] as const
@@ -86,6 +89,7 @@ function Main({
 }) {
   const { plan, setPlan, commit, dirty, status, message, dismissMessage } = usePlan(online)
   const live = useQuotes(plan?.investments)
+  const tx = useTransactions(online)
   const [tab, setTab] = useState<Tab | null>(null)
   const [menu, setMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -255,6 +259,7 @@ function Main({
           />
         )}
         {!onboarding && plan && tab === 'history' && <HistoryView plan={plan} />}
+        {!onboarding && plan && tab === 'spending' && <SpendingView plan={plan} setPlan={commit} tx={tx} />}
         {!onboarding && plan && tab === 'data' && <PlanEditor plan={plan} setPlan={setPlan} quotes={live.quotes} />}
         {!onboarding && plan && tab === 'results' && (
           <ResultsView plan={plan} onEdit={() => setTab('data')} live={live} setPlan={commit} />
@@ -263,7 +268,7 @@ function Main({
 
       <div className="fixed inset-x-0 bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto max-w-md space-y-2">
-          <nav className={`${onboarding ? 'hidden' : 'grid'} grid-cols-3 gap-1 rounded-[1.75rem] bg-surface/90 p-1.5 shadow-xl ring-1 ring-line backdrop-blur-xl lg:hidden`}>
+          <nav className={`${onboarding ? 'hidden' : 'grid'} grid-cols-4 gap-1 rounded-[1.75rem] bg-surface/90 p-1.5 shadow-xl ring-1 ring-line backdrop-blur-xl lg:hidden`}>
             {TABS.map(([key, Icon, label]) => (
               <button
                 key={key}
