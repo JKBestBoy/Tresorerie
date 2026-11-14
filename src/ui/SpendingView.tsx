@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircle2, ChevronDown, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, X, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
 import { merchantKey } from '../domain/categories'
 import { INVEST, NONE, analyzeMonth, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
 import { formatEuros } from '../domain/money'
@@ -435,6 +435,15 @@ export function SpendingView({
   const [openId, setOpenId] = useState<string | null>(null)
   const [queue, setQueue] = useState<string[] | null>(null)
   const [applied, setApplied] = useState<string | null>(null)
+  // Filtre de « Toutes les opérations » : une ligne, NONE (non classé), INVEST, ou tout
+  const [filter, setFilter] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const allRef = useRef<HTMLElement>(null)
+  const showTag = (id: string) => {
+    setFilter(id)
+    setShowAll(true)
+    requestAnimationFrame(() => allRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
   const months = useMemo(() => [...new Set(tx.transactions.map((t) => t.date.slice(0, 7)))].sort().reverse(), [tx.transactions])
   const [chosen, setChosen] = useState<string | null>(null)
   const month = chosen && months.includes(chosen) ? chosen : (months[0] ?? monthOf(new Date()))
@@ -456,6 +465,16 @@ export function SpendingView({
   const toSort = a.unplanned.filter((t) => t.category !== NONE && plan.txRules?.links[`m:${merchantKey(t.label)}`] !== NONE)
   const expenseLines = a.lines.filter((l) => l.kind === 'fixedExpense' || l.kind === 'plannedExpense').filter((l) => l.planned < 0 || l.real < 0)
   const canApply = month >= startMonthOf(plan) && a.lines.some((l) => l.txs.length > 0 && l.planned !== 0)
+  // Catégorie d'une opération pour le filtre : sa ligne, INVEST, ou NONE (non classée)
+  const tagOf = (id: string) => lineOf.get(id) ?? NONE
+  const filterLabel = (id: string) => (id === NONE ? 'Non prévu' : id === INVEST ? INVEST_LABEL : (labelOf(id) ?? 'Catégorie'))
+  const filterOptions = (() => {
+    const counts = new Map<string, number>()
+    for (const t of allOfMonth) counts.set(tagOf(t.id), (counts.get(tagOf(t.id)) ?? 0) + 1)
+    const order = [...a.lines.map((l) => l.id), INVEST, NONE]
+    return order.filter((id) => counts.has(id)).map((id) => ({ id, label: filterLabel(id), count: counts.get(id)! }))
+  })()
+  const shown = filter ? allOfMonth.filter((t) => tagOf(t.id) === filter) : allOfMonth
   const currentId = queue ? queue[0] : openId
   const open = tx.transactions.find((t) => t.id === currentId) ?? null
   const next = () => setQueue((q) => (q && q.length > 1 ? q.slice(1) : null))
@@ -590,33 +609,51 @@ export function SpendingView({
           <section className="rounded-3xl bg-surface p-4 ring-1 ring-line">
             <h2 className="font-bold">Par catégorie</h2>
             <p className="mb-3 text-xs text-muted">Vos lignes de « Mes données » : réel du mois (barre) et prévu (trait).</p>
-            <ul className="space-y-3">
+            <p className="-mt-2 mb-3 text-xs text-muted">Touchez une catégorie pour voir ses opérations.</p>
+            <ul className="space-y-1.5">
               {expenseLines.map((l) => {
                 const real = Math.abs(l.real)
                 const planned = Math.abs(l.planned)
                 const over = planned > 0 && real > planned + 50
                 return (
                   <li key={l.id}>
-                    <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-                      <span className="min-w-0 truncate font-semibold">
-                        {l.label} {l.txs.length > 0 && <span className="text-xs font-normal text-muted">· {l.txs.length}</span>}
-                      </span>
-                      <span className="num shrink-0">
-                        <span className={`font-bold ${over ? 'text-neg' : ''}`}>{l.txs.length ? eur(real) : '—'}</span>
-                        <span className="text-xs text-muted"> / {eur(planned)}</span>
-                      </span>
-                    </div>
-                    <Bar value={real} planned={planned} />
+                    <button
+                      type="button"
+                      disabled={l.txs.length === 0}
+                      onClick={() => showTag(l.id)}
+                      className="-mx-2 block w-[calc(100%+1rem)] rounded-xl px-2 py-1 text-left enabled:hover:bg-surface-2"
+                    >
+                      <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                        <span className="min-w-0 truncate font-semibold">
+                          {l.label} {l.txs.length > 0 && <span className="text-xs font-normal text-muted">· {l.txs.length}</span>}
+                        </span>
+                        <span className="num flex shrink-0 items-center">
+                          <span className={`font-bold ${over ? 'text-neg' : ''}`}>{l.txs.length ? eur(real) : '—'}</span>
+                          <span className="text-xs text-muted">&nbsp;/ {eur(planned)}</span>
+                          <ChevronRight size={14} className={`ml-0.5 ${l.txs.length ? 'text-muted' : 'invisible'}`} />
+                        </span>
+                      </div>
+                      <Bar value={real} planned={planned} />
+                    </button>
                   </li>
                 )
               })}
               {a.unplannedTotal > 0 && (
                 <li>
-                  <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-                    <span className="font-semibold text-neg">Non prévu · {a.unplanned.length}</span>
-                    <span className="num font-bold text-neg">{eur(a.unplannedTotal)}</span>
-                  </div>
-                  <Bar value={a.unplannedTotal} planned={0} />
+                  <button
+                    type="button"
+                    onClick={() => showTag(NONE)}
+                    className="-mx-2 block w-[calc(100%+1rem)] rounded-xl px-2 py-1 text-left hover:bg-surface-2"
+                  >
+                    <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                      <span className="font-semibold text-neg">Non prévu · {a.unplanned.length}</span>
+                      <span className="num flex items-center font-bold text-neg">
+                        {eur(a.unplannedTotal)}
+                        <ChevronRight size={14} className="ml-0.5 text-muted" />
+                      </span>
+                    </div>
+                    <Bar value={a.unplannedTotal} planned={0} />
+                  </button>
                 </li>
               )}
             </ul>
@@ -684,20 +721,56 @@ export function SpendingView({
             </section>
           )}
 
-          {/* Toutes les opérations */}
-          <details className="group rounded-3xl bg-surface ring-1 ring-line">
-            <summary className="flex cursor-pointer list-none items-center justify-between p-4">
-              <span className="font-bold">Toutes les opérations · {allOfMonth.length}</span>
-              <ChevronDown size={16} className="text-muted transition group-open:rotate-180" />
-            </summary>
-            <ul className="divide-y divide-line px-4 pb-3">
-              {allOfMonth.map((t) => (
-                <li key={t.id}>
-                  <TxRow t={t} label={labelOf(lineOf.get(t.id))} onOpen={() => setOpenId(t.id)} />
-                </li>
-              ))}
-            </ul>
-          </details>
+          {/* Toutes les opérations, filtrables par catégorie */}
+          <section ref={allRef} className="scroll-mt-24 rounded-3xl bg-surface ring-1 ring-line">
+            <button type="button" onClick={() => setShowAll((v) => !v)} className="flex w-full items-center justify-between p-4 text-left">
+              <span className="font-bold">
+                {filter ? `${filterLabel(filter)} · ${shown.length}` : `Toutes les opérations · ${allOfMonth.length}`}
+              </span>
+              <ChevronDown size={16} className={`text-muted transition ${showAll ? 'rotate-180' : ''}`} />
+            </button>
+            {showAll && (
+              <div className="px-4 pb-3">
+                <div className="flex items-center gap-2">
+                  <select
+                    className={`${inputClass} min-w-0 flex-1 py-2 text-sm`}
+                    value={filter ?? ''}
+                    onChange={(e) => setFilter(e.target.value || null)}
+                    aria-label="Filtrer par catégorie"
+                  >
+                    <option value="">Toutes les catégories</option>
+                    {filterOptions.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.label} ({o.count})
+                      </option>
+                    ))}
+                  </select>
+                  {filter && (
+                    <button
+                      type="button"
+                      onClick={() => setFilter(null)}
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-muted"
+                      aria-label="Retirer le filtre"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+                {filter && (
+                  <p className="mt-2 text-xs text-muted">
+                    Total : <span className="num font-semibold text-ink">{exact(shown.reduce((sum, t) => sum + t.amount, 0))}</span>
+                  </p>
+                )}
+                <ul className="mt-1 divide-y divide-line">
+                  {shown.map((t) => (
+                    <li key={t.id}>
+                      <TxRow t={t} label={labelOf(lineOf.get(t.id))} onOpen={() => setOpenId(t.id)} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
         </div>
       </div>
       {sheets}
