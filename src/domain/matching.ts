@@ -89,6 +89,20 @@ export const REFUND = '__refund__'
 /** Virement entre deux de vos comptes : ni dépense, ni rentrée (l'argent ne fait que changer de compte). */
 export const TRANSFER = '__transfer__'
 
+/**
+ * Virement entre mes comptes rattaché, pour information, à une ligne (ex. « pour payer Internet ») :
+ * stocké comme « __transfer__|idLigne ». Il reste ignoré dans les totaux (pas de double comptage).
+ */
+export const transferWith = (lineId: string | null) => (lineId ? `${TRANSFER}|${lineId}` : TRANSFER)
+const isTransferValue = (v?: string | null) => !!v && (v === TRANSFER || v.startsWith(`${TRANSFER}|`))
+const transferLineOf = (v?: string | null) => (v && v.startsWith(`${TRANSFER}|`) ? v.slice(TRANSFER.length + 1) : null)
+
+/** Ligne associée à un virement entre mes comptes (choix pour l'opération, sinon pour le commerçant), ou null. */
+export function transferNote(t: Transaction, plan: Plan): string | null {
+  if (isTransferValue(t.category)) return transferLineOf(t.category)
+  return transferLineOf(plan.txRules?.links[`m:${merchantKey(t.label)}`])
+}
+
 const TRANSFER_KEYWORDS = ['top up', 'topup', 'virement interne', 'compte a compte', 'own account', 'eigen rekening', 'entre mes comptes']
 
 /**
@@ -168,10 +182,12 @@ export function categoryOf(t: Transaction, plan: Plan): string {
 export function assignedLine(t: Transaction, plan: Plan, monthLines: PlanLine[], transfers?: Set<string>): string | null {
   const exists = (id: string) => id === INVEST || id === TRANSFER || (id === REFUND && t.amount > 0) || targetsFor(plan, t.amount).some((o) => o.id === id)
   // Rentrée classée « autre rentrée » (NONE) : on la garde telle quelle
+  if (isTransferValue(t.category)) return TRANSFER
   if (t.category === NONE) return t.amount > 0 ? NONE : null
   if (t.category && exists(t.category)) return t.category
   const rule = plan.txRules?.links[`m:${merchantKey(t.label)}`]
   if (rule === NONE) return t.amount > 0 ? NONE : null
+  if (!t.category && isTransferValue(rule)) return TRANSFER
   if (rule && exists(rule)) return rule
   if (transfers?.has(t.id) || looksLikeTransfer(t)) return TRANSFER
   // Placement reconnu : sauf si une de vos lignes porte ce nom (ex. dépense fixe « DCA Binance »)

@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeftRight, CheckCircle2, ChevronDown, FileText, FolderOpen, RefreshCw, Trash2, ChevronRight, Undo2, X, FileUp, ListChecks, PiggyBank, Receipt, Sparkles, Tag } from 'lucide-react'
 import { merchantKey } from '../domain/categories'
-import { INVEST, NONE, REFUND, TRANSFER, analyzeMonth, isExpenseKind, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
+import { INVEST, NONE, REFUND, TRANSFER, analyzeMonth, transferNote, transferWith, isExpenseKind, lineOptions, withLinkRule, type MonthAnalysis } from '../domain/matching'
 import { formatEuros } from '../domain/money'
 import { monthLabel, monthOf } from '../domain/month'
 import { setActual, startMonthOf, toggleSettled, paidKeys, paidKey } from '../domain/projection'
@@ -498,9 +498,10 @@ function TxSheet({
       setPlan((p) => withLinkRule(p, `m:${merchantKey(t.label)}`, id))
       await setCategory(t.id, null)
     } else await setCategory(t.id, id)
-    // Investissement : on reste sur la fiche pour choisir où l'ajouter
-    if (onNext && !(id === INVEST && investments.length > 0)) onNext()
+    // Investissement / virement : on reste sur la fiche pour préciser (investissement crédité, dépense concernée)
+    if (onNext && !(id === INVEST && investments.length > 0) && id !== TRANSFER) onNext()
   }
+  const note = assigned === TRANSFER ? transferNote(t, plan) : null
 
   function linkTo(investmentId: string | null) {
     setPlan((p) => (investmentId ? linkTxToInvestment(p, t.id, t.amount, investmentId, quotes) : unlinkTx(p, t.id)))
@@ -513,6 +514,13 @@ function TxSheet({
         {day(t.date)} · <span className={`num font-semibold ${t.amount < 0 ? 'text-neg' : 'text-pos'}`}>{exact(t.amount)}</span>
         {t.description && t.description !== t.label && <span className="block truncate text-xs">{t.description}</span>}
       </p>
+      {(t.account || t.source) && (
+        <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted">
+          <FileText size={12} className="shrink-0" />
+          {t.account && <span className="font-semibold text-ink">{t.account}</span>}
+          {t.source && <span className="truncate">· relevé « {t.source} »</span>}
+        </p>
+      )}
       {queueLeft !== undefined && (
         <p className="mt-2 rounded-xl bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent-ink">À classer : encore {queueLeft} après celle-ci</p>
       )}
@@ -584,10 +592,36 @@ function TxSheet({
         <Chip tone="pos" on={assigned === INVEST} onClick={() => choose(INVEST)}>
           <PiggyBank size={13} /> Investissement / épargne
         </Chip>
-        <Chip on={assigned === TRANSFER} onClick={() => choose(TRANSFER)}>
+        <Chip on={assigned === TRANSFER} onClick={() => choose(transferWith(note))}>
           <ArrowLeftRight size={13} /> Virement entre mes comptes
         </Chip>
       </div>
+      {assigned === TRANSFER && (
+        <div className="mt-3 rounded-2xl bg-surface-2 p-3 ring-1 ring-line">
+          <p className="text-xs font-semibold">Ce virement sert à payer quelque chose ? (facultatif)</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {[...lineOptions(plan, -1), ...lineOptions(plan, 1)].map((o) => (
+              <Chip key={o.id} on={note === o.id} onClick={() => choose(transferWith(o.id))}>
+                <Dot hue={hues.get(o.id)} /> {o.label}
+              </Chip>
+            ))}
+            {note && (
+              <button type="button" onClick={() => choose(transferWith(null))} className="rounded-full px-3 py-1.5 text-xs font-semibold text-muted hover:bg-surface">
+                Aucune
+              </button>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            Pour information : il apparaîtra dans cette catégorie, mais reste un virement entre vos comptes, donc il n’est pas compté une deuxième fois
+            (la vraie dépense est celle payée depuis l’autre compte).
+          </p>
+          {onNext && (
+            <button type="button" onClick={onNext} className="mt-2 text-xs font-semibold text-accent">
+              Suivante →
+            </button>
+          )}
+        </div>
+      )}
       {assigned === INVEST && (
         <div className="mt-3 rounded-2xl bg-pos-soft p-3 ring-1 ring-pos/15">
           <p className="text-xs font-semibold text-pos">
@@ -735,7 +769,7 @@ function TxRow({
 const INVEST_LABEL = 'Investissement'
 
 /** Teintes bien distinctes (en évitant le rouge, le vert et le jaune de « Non prévu », « Investissement » et « Non classé ») */
-const HUES = [215, 280, 180, 330, 25, 250, 195, 305, 85, 345, 230, 165]
+const HUES = [215, 280, 180, 330, 25, 250, 195, 305, 85, 65, 230, 165]
 /** Teinte de chaque ligne de « Mes données », dans l'ordre où elles sont saisies */
 function huesOf(plan: Plan): Map<string, number> {
   const ids = [...lineOptions(plan, -1), ...lineOptions(plan, 1)].map((o) => o.id)
@@ -830,7 +864,11 @@ export function SpendingView({
       return inv ? `${INVEST_LABEL} → ${inv.label}` : INVEST_LABEL
     }
     if (id === REFUND) return 'Remb. non prévu'
-    if (id === TRANSFER) return 'Virement interne'
+    if (id === TRANSFER) {
+      const note = t && transferNote(t, plan)
+      const ln = note && lineLabel(note)
+      return ln ? `Virement · ${ln}` : 'Virement interne'
+    }
     if (id === NONE) return 'Autre rentrée'
     const l = a.lines.find((x) => x.id === id)
     if (!l) return null
@@ -868,10 +906,21 @@ export function SpendingView({
             : id === INVEST
               ? INVEST_LABEL
               : (lineLabel(id) ?? 'Catégorie')
-  const matches = (t: Transaction, f: string) => (f === ALL_IN ? t.amount > 0 : f === ALL_OUT ? t.amount < 0 : tagOf(t) === f)
+  // Un virement entre mes comptes rattaché à une ligne apparaît aussi dans cette ligne (pour info)
+  const matches = (t: Transaction, f: string) =>
+    f === ALL_IN ? t.amount > 0 : f === ALL_OUT ? t.amount < 0 : tagOf(t) === f || (lineOf.get(t.id) === TRANSFER && transferNote(t, plan) === f)
+  const isTransfer = (t: Transaction) => lineOf.get(t.id) === TRANSFER
+  const hueFor = (t: Transaction) => {
+    const id = lineOf.get(t.id)
+    return hues.get((id === TRANSFER ? transferNote(t, plan) : id) ?? '')
+  }
   const filterOptions = (() => {
     const counts = new Map<string, number>()
-    for (const t of allOfMonth) counts.set(tagOf(t), (counts.get(tagOf(t)) ?? 0) + 1)
+    for (const t of allOfMonth) {
+      counts.set(tagOf(t), (counts.get(tagOf(t)) ?? 0) + 1)
+      const note = isTransfer(t) ? transferNote(t, plan) : null
+      if (note) counts.set(note, (counts.get(note) ?? 0) + 1)
+    }
     const order = [...a.lines.map((l) => l.id), OTHER_IN, INVEST, TRANSFER, NONE]
     return [
       { id: ALL_IN, label: filterLabel(ALL_IN), count: allOfMonth.filter((t) => t.amount > 0).length },
@@ -1207,7 +1256,7 @@ export function SpendingView({
               <ul className="divide-y divide-line">
                 {a.unplanned.map((t) => (
                   <li key={t.id}>
-                    <TxRow t={t} showAccount={accounts.length > 1} label={labelOf(lineOf.get(t.id), t)} hue={hues.get(lineOf.get(t.id) ?? '')} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
+                    <TxRow t={t} showAccount label={labelOf(lineOf.get(t.id), t)} hue={hueFor(t)} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
                   </li>
                 ))}
               </ul>
@@ -1224,7 +1273,7 @@ export function SpendingView({
               <ul className="divide-y divide-line">
                 {a.investTxs.map((t) => (
                   <li key={t.id}>
-                    <TxRow t={t} showAccount={accounts.length > 1} label={labelOf(INVEST, t)} onOpen={() => setOpenId(t.id)} />
+                    <TxRow t={t} showAccount label={labelOf(INVEST, t)} onOpen={() => setOpenId(t.id)} />
                   </li>
                 ))}
               </ul>
@@ -1268,13 +1317,14 @@ export function SpendingView({
                 </div>
                 {filter && (
                   <p className="mt-2 text-xs text-muted">
-                    Total : <span className="num font-semibold text-ink">{exact(shown.reduce((sum, t) => sum + t.amount, 0))}</span>
+                    Total : <span className="num font-semibold text-ink">{exact(shown.filter((t) => filter === TRANSFER || !isTransfer(t)).reduce((sum, t) => sum + t.amount, 0))}</span>
+                    {filter !== TRANSFER && shown.some(isTransfer) && ' (sans les virements entre vos comptes)'}
                   </p>
                 )}
                 <ul className="mt-1 divide-y divide-line">
                   {shown.map((t) => (
                     <li key={t.id}>
-                      <TxRow t={t} showAccount={accounts.length > 1} label={labelOf(lineOf.get(t.id), t)} hue={hues.get(lineOf.get(t.id) ?? '')} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
+                      <TxRow t={t} showAccount label={labelOf(lineOf.get(t.id), t)} hue={hueFor(t)} neg={lineOf.get(t.id) === REFUND} onOpen={() => setOpenId(t.id)} />
                     </li>
                   ))}
                 </ul>

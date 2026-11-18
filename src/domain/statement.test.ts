@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { categorize, merchantKey } from './categories'
-import { INVEST, NONE, REFUND, TRANSFER, analyzeMonth, findTransfers, withLinkRule } from './matching'
+import { INVEST, NONE, REFUND, TRANSFER, analyzeMonth, findTransfers, transferNote, transferWith, withLinkRule } from './matching'
 import { detectColumns, parseAmount, parseCsv, parseDate, toTransactions } from './statement'
 import type { Plan } from './types'
 
@@ -206,5 +206,20 @@ describe('analyse du mois', () => {
     // Classement manuel
     const forced = analyzeMonth(plan(), [{ ...list[4], category: TRANSFER }], '2026-11')
     expect(forced.transfers).toHaveLength(1)
+  })
+
+  it('virement entre mes comptes rattaché à une dépense : pour info, jamais compté deux fois', () => {
+    const t = { id: 'v', date: '2026-11-06', amount: 4000, label: 'Moi', description: '', account: 'bunq', category: transferWith('cou') }
+    const a = analyzeMonth(plan(), [t], '2026-11')
+    expect(a.transfers.map((x) => x.id)).toEqual(['v'])
+    expect(a.received).toBe(0)
+    expect(a.lines.find((l) => l.id === 'cou')!.real).toBe(0)
+    expect(transferNote(t, plan())).toBe('cou')
+    // Même chose avec une règle pour ce commerçant
+    const p = withLinkRule(plan(), `m:${merchantKey('Moi')}`, transferWith('loy'))
+    const u = { ...t, category: undefined }
+    expect(analyzeMonth(p, [u], '2026-11').transfers).toHaveLength(1)
+    expect(transferNote(u, p)).toBe('loy')
+    expect(transferNote({ ...t, category: TRANSFER }, plan())).toBeNull()
   })
 })
