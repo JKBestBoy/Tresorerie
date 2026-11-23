@@ -158,7 +158,7 @@ export function ResultsView({
         <NewMonthCard key={current} plan={plan} current={current} suggested={thisMonth.opening} setPlan={setPlan} />
       )}
 
-      {inv.lines.length > 0 && <InvestmentsCard summary={inv} cash={thisMonth.opening} live={live} />}
+      {inv.lines.length > 0 && <InvestmentsCard summary={inv} cash={plan.startingCapital.amount} live={live} />}
 
       {/* Ce mois-ci */}
       <section>
